@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { PlaidLink } from "@/components/plaid-link";
 import { scenarioPresets } from "@/lib/demo-scenarios";
 import type { ApplicantInput, ProfileSummary } from "@/lib/types";
 
@@ -87,6 +88,32 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
     setStatusMessage(
       "Sandbox bank connection loaded. Credora will share derived cash-flow signals, not raw transactions.",
     );
+  }
+
+  async function handlePlaidSuccess(publicToken: string) {
+    setStatusMessage("Verifying bank connection...");
+    try {
+      const response = await fetch("/api/plaid/exchange-public-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_token: publicToken }),
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        updateForm("bankConnected", true);
+        updateForm("accountOwnerMatch", true);
+        updateConsent("bank_connection", true);
+        setStatusMessage(
+          "Bank connection verified via Plaid. Credora will share derived cash-flow signals, not raw transactions.",
+        );
+      } else {
+        setStatusMessage("Failed to verify bank connection: " + data.error);
+      }
+    } catch (error) {
+      console.error("Plaid exchange error:", error);
+      setStatusMessage("An error occurred during bank verification.");
+    }
   }
 
   function disconnectBank() {
@@ -289,10 +316,24 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
                 <h2>Consent and data connection</h2>
               </div>
               <div className="button-row">
-                <button className="button button--secondary" onClick={connectSandboxBank} type="button">
+                <button
+                  className="button button--secondary"
+                  onClick={connectSandboxBank}
+                  type="button"
+                >
                   Load sandbox bank data
                 </button>
-                <button className="button button--ghost" onClick={disconnectBank} type="button">
+                {/* 
+                <PlaidLink
+                  onSuccess={handlePlaidSuccess}
+                  disabled={isPending}
+                /> 
+                */}
+                <button
+                  className="button button--ghost"
+                  onClick={disconnectBank}
+                  type="button"
+                >
                   Remove bank data
                 </button>
               </div>
