@@ -9,7 +9,7 @@ export async function POST(
 ) {
   const { reportId } = await params;
   const body = (await request.json()) as Omit<AccessLog, "id" | "at">;
-  const report = logReportAccess(reportId, body);
+  const report = await logReportAccess(reportId, body);
 
   if (!report) {
     return Response.json({ error: "Report not found" }, { status: 404 });

@@ -596,6 +596,54 @@ h3 {
   color: var(--text-soft);
 }
 
+.score-ring-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.score-ring-wrap .hero-score {
+  position: absolute;
+}
+
+.score-ring {
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.score-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 7;
+}
+
+.score-ring-fill {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.score-bar-track {
+  height: 5px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.score-bar--strong  { background: var(--positive); }
+.score-bar--moderate { background: var(--balanced); }
+.score-bar--weak    { background: var(--caution); }
+.score-bar--unknown { background: var(--text-soft); }
+
 .blocked-banner {
   margin-top: 1rem;
   background: linear-gradient(135deg, rgba(255, 242, 236, 0.96), rgba(255, 255, 255, 0.88));

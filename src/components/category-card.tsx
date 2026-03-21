@@ -12,9 +12,15 @@ export function CategoryCard({ category }: { category: TrustCategory }) {
         <div className="stack-xs align-end">
           <BandPill tone={category.band}>{category.band}</BandPill>
           <strong className="score-number">
-            {typeof category.score === "number" ? category.score : "--"}
+            {typeof category.score === "number" ? Math.round(category.score) : "--"}
           </strong>
         </div>
+      </div>
+      <div className="score-bar-track">
+        <div
+          className={`score-bar-fill score-bar--${category.band.toLowerCase()}`}
+          style={{ width: `${Math.round(typeof category.score === "number" ? category.score : 0)}%` }}
+        />
       </div>
       <p className="body-muted">{category.rationale}</p>
       <div className="chip-group">

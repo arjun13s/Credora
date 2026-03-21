@@ -9,7 +9,7 @@ export async function POST(
 ) {
   const { reportId } = await params;
   const body = (await request.json()) as Omit<ReviewAction, "createdAt">;
-  const report = recordReview(reportId, {
+  const report = await recordReview(reportId, {
     ...body,
     createdAt: new Date().toISOString(),
   });

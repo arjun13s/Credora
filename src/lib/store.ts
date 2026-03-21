@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/db";
 import { buildProfileSummary } from "@/lib/scoring";
 import { getDefaultApplicantInput } from "@/lib/demo-scenarios";
 import type {
@@ -9,19 +10,17 @@ import type {
   ReviewAction,
 } from "@/lib/types";
 
-declare global {
-  var __credoraStore__: Map<string, ProfileSummary> | undefined;
+function parse(data: string): ProfileSummary {
+  return JSON.parse(data) as ProfileSummary;
 }
 
-function getBackingStore() {
-  if (!globalThis.__credoraStore__) {
-    globalThis.__credoraStore__ = new Map<string, ProfileSummary>();
-
-    const seeded = buildProfileSummary(getDefaultApplicantInput());
-    globalThis.__credoraStore__.set(seeded.id, seeded);
-  }
-
-  return globalThis.__credoraStore__;
+async function save(report: ProfileSummary): Promise<ProfileSummary> {
+  await prisma.report.upsert({
+    where: { id: report.id },
+    update: { data: JSON.stringify(report) },
+    create: { id: report.id, data: JSON.stringify(report) },
+  });
+  return report;
 }
 
 function appendLog(report: ProfileSummary, entry: Omit<AccessLog, "id" | "at">) {
@@ -32,43 +31,44 @@ function appendLog(report: ProfileSummary, entry: Omit<AccessLog, "id" | "at">) 
   });
 }
 
-export function listReports() {
-  return Array.from(getBackingStore().values());
+export async function listReports(): Promise<ProfileSummary[]> {
+  const rows = await prisma.report.findMany({ orderBy: { createdAt: "desc" } });
+
+  if (rows.length === 0) {
+    const seeded = buildProfileSummary(getDefaultApplicantInput());
+    await save(seeded);
+    return [seeded];
+  }
+
+  return rows.map((r) => parse(r.data));
 }
 
-export function getReport(reportId: string) {
-  return getBackingStore().get(reportId);
+export async function getReport(reportId: string): Promise<ProfileSummary | undefined> {
+  const row = await prisma.report.findUnique({ where: { id: reportId } });
+  return row ? parse(row.data) : undefined;
 }
 
-export function createReport(input: ApplicantInput) {
+export async function createReport(input: ApplicantInput): Promise<ProfileSummary> {
   const report = buildProfileSummary(input);
-  getBackingStore().set(report.id, report);
-  return report;
+  return save(report);
 }
 
-export function logReportAccess(
+export async function logReportAccess(
   reportId: string,
   entry: Omit<AccessLog, "id" | "at">,
-) {
-  const report = getReport(reportId);
-
-  if (!report) {
-    return undefined;
-  }
-
+): Promise<ProfileSummary | undefined> {
+  const report = await getReport(reportId);
+  if (!report) return undefined;
   appendLog(report, entry);
-  return report;
+  return save(report);
 }
 
-export function addDispute(
+export async function addDispute(
   reportId: string,
   dispute: Omit<DisputeCase, "id" | "createdAt" | "status">,
-) {
-  const report = getReport(reportId);
-
-  if (!report) {
-    return undefined;
-  }
+): Promise<ProfileSummary | undefined> {
+  const report = await getReport(reportId);
+  if (!report) return undefined;
 
   const newDispute: DisputeCase = {
     ...dispute,
@@ -84,15 +84,15 @@ export function addDispute(
     detail: `Dispute submitted for ${dispute.field}.`,
   });
 
-  return report;
+  return save(report);
 }
 
-export function recordReview(reportId: string, review: ReviewAction) {
-  const report = getReport(reportId);
-
-  if (!report) {
-    return undefined;
-  }
+export async function recordReview(
+  reportId: string,
+  review: ReviewAction,
+): Promise<ProfileSummary | undefined> {
+  const report = await getReport(reportId);
+  if (!report) return undefined;
 
   report.reviewerAction = review;
   appendLog(report, {
@@ -101,19 +101,16 @@ export function recordReview(reportId: string, review: ReviewAction) {
     detail: `${review.reviewerName} recorded "${review.disposition}".`,
   });
 
-  return report;
+  return save(report);
 }
 
-export function updateConsentStatus(
+export async function updateConsentStatus(
   reportId: string,
   source: ConsentGrant["source"],
   status: ConsentGrant["status"],
-) {
-  const report = getReport(reportId);
-
-  if (!report) {
-    return undefined;
-  }
+): Promise<ProfileSummary | undefined> {
+  const report = await getReport(reportId);
+  if (!report) return undefined;
 
   report.consent = report.consent.map((grant) =>
     grant.source === source ? { ...grant, status } : grant,
@@ -125,5 +122,5 @@ export function updateConsentStatus(
     detail: `Consent for ${source} changed to ${status}.`,
   });
 
-  return report;
+  return save(report);
 }

@@ -12,7 +12,7 @@ export async function POST(
     source: ConsentGrant["source"];
     status: ConsentGrant["status"];
   };
-  const report = updateConsentStatus(reportId, body.source, body.status);
+  const report = await updateConsentStatus(reportId, body.source, body.status);
 
   if (!report) {
     return Response.json({ error: "Report not found" }, { status: 404 });

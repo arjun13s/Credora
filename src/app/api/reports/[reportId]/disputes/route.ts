@@ -11,7 +11,7 @@ export async function POST(
     field: string;
     explanation: string;
   };
-  const report = addDispute(reportId, body);
+  const report = await addDispute(reportId, body);
 
   if (!report) {
     return Response.json({ error: "Report not found" }, { status: 404 });

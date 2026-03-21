@@ -16,9 +16,26 @@ export function RecommendationBanner({ report }: { report: ProfileSummary }) {
         </div>
         <div className="score-panel">
           <span className="score-kicker">Explainable score</span>
-          <strong className="hero-score">
-            {report.overallScore !== null ? report.overallScore : "--"}
-          </strong>
+          <div className="score-ring-wrap">
+            <svg className="score-ring" viewBox="0 0 100 100" width="110" height="110">
+              <circle className="score-ring-track" cx="50" cy="50" r="42" />
+              <circle
+                className="score-ring-fill"
+                cx="50"
+                cy="50"
+                r="42"
+                strokeDasharray="263.9"
+                strokeDashoffset={
+                  report.overallScore !== null
+                    ? 263.9 * (1 - report.overallScore / 100)
+                    : 263.9
+                }
+              />
+            </svg>
+            <strong className="hero-score">
+              {report.overallScore !== null ? report.overallScore : "--"}
+            </strong>
+          </div>
           <BandPill tone={report.confidence}>{report.confidence} confidence</BandPill>
         </div>
       </div>
