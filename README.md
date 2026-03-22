@@ -1,161 +1,170 @@
 # Credora
 
-Credora is a housing-first Applicant Profile app for thin-file renters. An applicant fills out a private profile, gets a housing-specific reliability result, and can then choose to publish an immutable public snapshot.
+> **Housing trust, built from evidence. Not just a credit score.**
 
-## Current product flow
+Credora gives thin-file renters a way to actually prove they're reliable. Fill out a structured profile, get a transparent score broken down by category, and — when you're ready — publish an immutable public snapshot that lives forever. No black boxes. No automated rejections. No vibes-based landlord decisions.
 
-1. Applicant completes `/applicant-profile`
-2. Credora stores the submission and evaluates it
-3. Applicant reviews private results at `/profiles/[profileId]`
-4. Applicant may publish a permanent public snapshot
-5. Published snapshots appear in the public directory and on `/published/[snapshotId]`
+---
 
-Publishing is intentional and one-way for each snapshot:
+## What it does
 
-- the public snapshot is immutable
-- later publishes create a newer linked version
-- older public versions remain visible as historical records
+Traditional credit scores miss the full picture. Credora builds a housing-specific reliability profile from real evidence:
 
-## Main routes
+- **Payment consistency** — rent streaks, utility payments, no missed months
+- **Income regularity** — stable deposits, pay stubs, employment duration
+- **Housing history** — previous tenancies, references, time at address
+- **Balance stability** — savings behavior, cash flow patterns
 
-- `/` landing page
-- `/applicant-profile` applicant intake page
-- `/profiles/[profileId]` applicant-only results page
-- `/review` public snapshot directory
-- `/published/[snapshotId]` immutable public snapshot page
+Each category gets its own score + rationale. Missing evidence is flagged separately from actual risk — so "we don't have your bank statements" doesn't count the same as "you missed three payments."
 
-Legacy compatibility routes still redirect:
+---
 
-- `/applicant`
-- `/profile/[reportId]`
-- `/review/[reportId]`
-- `/profiles/[profileId]/reviewer`
+## The flow
 
-## Backend routes
+```
+Applicant fills form  →  Credora scores it  →  Private results first
+                                                      ↓
+                                          Applicant chooses to publish
+                                                      ↓
+                                          Immutable public snapshot
+                                          (reviewers can see it anytime)
+```
 
-- `POST /api/profiles`
-  - one-shot create-and-submit flow used by the current frontend
-- `GET /api/profiles`
-  - list full profile views
-- `GET /api/profiles/[profileId]`
-  - fetch full applicant-facing profile view
-- `POST /api/profiles/[profileId]/publish`
-  - publish a new immutable public snapshot for the latest scored result
-- `POST /api/profiles/[profileId]/disputes`
-  - open a dispute against the current private profile
-- `POST /api/profiles/[profileId]/access`
-  - append an access event to the audit log
+Publishing is **intentional and one-way** per snapshot:
+- once published, a snapshot can't be edited
+- a new publish creates a linked next version
+- old versions stay visible as a permanent record
 
-Draft-oriented integration routes for a replacement frontend:
+---
 
-- `POST /api/profiles/drafts`
-- `GET /api/profiles/[profileId]/draft`
-- `PATCH /api/profiles/[profileId]/draft`
-- `POST /api/profiles/[profileId]/submit`
-- `GET /api/profiles/[profileId]/status`
-- `GET /api/profiles/[profileId]/evaluation`
-- `GET /api/profiles/summaries`
+## Pages
 
-Deprecated:
+| Route | What's there |
+|---|---|
+| `/` | Landing — hero, how it works, feature grid |
+| `/applicant-profile` | Intake form — submit once, score everything |
+| `/profiles/[profileId]` | Private results — applicant-only, full breakdown |
+| `/review` | Public directory — tile grid of published snapshots |
+| `/published/[snapshotId]` | Immutable public profile — shareable, permanent |
+| `/blockchain-technology` | How attestations and hashing work |
 
-- `POST /api/profiles/[profileId]/share-links`
-- `DELETE /api/profiles/[profileId]/share-links`
-  - both return `410 Gone`
+Legacy routes (`/applicant`, `/profile/[id]`, `/review/[id]`) redirect automatically.
+
+---
+
+## API
+
+### Core
+
+```
+POST /api/profiles                        create + submit in one shot
+GET  /api/profiles/[profileId]            fetch full profile
+POST /api/profiles/[profileId]/publish    publish immutable snapshot
+POST /api/profiles/[profileId]/disputes   open a dispute
+POST /api/profiles/[profileId]/access     append audit log event
+```
+
+### Draft flow (for incremental frontends)
+
+```
+POST   /api/profiles/drafts
+GET    /api/profiles/[profileId]/draft
+PATCH  /api/profiles/[profileId]/draft
+POST   /api/profiles/[profileId]/submit
+GET    /api/profiles/[profileId]/status
+GET    /api/profiles/[profileId]/evaluation
+GET    /api/profiles/summaries
+```
+
+> `POST/DELETE /api/profiles/[profileId]/share-links` → `410 Gone` (deprecated)
+
+---
 
 ## Architecture
 
-### App/backend orchestration
+### The scoring pipeline
 
-- `src/lib/store.ts`
-  - profile creation
-  - draft update/submit flow
-  - evaluation persistence
-  - immutable public snapshot publishing
-  - disputes, audit logs, compatibility helpers
-
-### Evaluation preparation
-
-- `src/lib/evidence-normalizer.ts`
-  - normalizes applicant input into structured evidence
-- `src/lib/rubric.ts`
-  - deterministic category scoring and confidence logic
-- `src/lib/evaluator-client.ts`
-  - builds requests for an external evaluator and handles fallback
-- `src/lib/evaluator-validator.ts`
-  - validates external evaluator responses
-- `src/lib/hud-contract.ts`
-  - central HUD-facing translation layer
-  - exact nested recommendation payload builder
-  - canonical decision-band mapping
-  - HUD category score mapping
-
-### Persistence
-
-- `src/lib/persistence.ts`
-  - local JSON persistence in `.data/credora-db.json`
-- `src/lib/api-contracts.ts`
-  - typed request/response contracts
-
-### Future blockchain hook
-
-- `src/lib/attestations.ts`
-  - no-op attestation interface
-
-The current blockchain posture is intentionally lightweight:
-
-- public snapshots get a stable payload hash
-- the app stores a demo attestation record
-- no raw applicant data is written on-chain
-- future anchoring should use the snapshot hash, not the full profile
-
-## Evaluator configuration
-
-This repo does not run direct LLM prompts or model inference.
-
-Supported modes:
-
-```bash
-CREDORA_EVALUATOR_MODE=local_mock
+```
+applicant input
+    → evidence-normalizer.ts   (structure raw input into typed evidence)
+    → rubric.ts                (deterministic category scores + confidence)
+    → evaluator-client.ts      (optional external evaluator, with fallback)
+    → evaluator-validator.ts   (validate external responses)
+    → hud-contract.ts          (HUD-facing payload, band mapping, recommendations)
+    → store.ts                 (persist everything, handle publish/dispute/audit)
 ```
 
-Available values:
+### Key files
 
-- `local_mock`
-- `deterministic_only`
-- `hud_remote`
+| File | Does what |
+|---|---|
+| `src/lib/store.ts` | The brain — profile lifecycle, snapshots, disputes, audit logs |
+| `src/lib/rubric.ts` | Deterministic scoring — no LLM, no randomness |
+| `src/lib/evaluator-client.ts` | Calls external evaluator if configured, falls back gracefully |
+| `src/lib/hud-contract.ts` | HUD translation layer — recommendation payloads, band mapping |
+| `src/lib/persistence.ts` | Local JSON storage at `.data/credora-db.json` |
+| `src/lib/attestations.ts` | Blockchain hook — currently no-op, ready for real anchoring |
 
-Optional future remote evaluator configuration:
+### Blockchain posture
+
+Intentionally lightweight for now:
+- every published snapshot gets a stable **payload hash**
+- a demo attestation record is stored alongside it
+- **no raw applicant data goes on-chain** — only the hash
+- future anchoring plugs into `attestations.ts` using the snapshot hash
+
+---
+
+## Evaluator modes
+
+No LLMs run in this repo. The evaluator is a swappable boundary:
 
 ```bash
-CREDORA_EVALUATOR_MODE=hud_remote
+CREDORA_EVALUATOR_MODE=local_mock        # default, good for dev
+CREDORA_EVALUATOR_MODE=deterministic_only # rubric only, no external calls
+CREDORA_EVALUATOR_MODE=hud_remote        # calls a real external service
+```
+
+For remote mode:
+```bash
 CREDORA_HUD_EVALUATOR_URL=https://your-hud-service.example.com/evaluate
 ```
 
-If the external evaluator is unavailable, the app falls back to the deterministic rubric.
+If the external evaluator is down, the app falls back to the deterministic rubric automatically.
 
-## Run locally
+---
+
+## UI details
+
+- **Light mode by default**, dark mode toggle top-right of every page
+- **No login required** — fully public, no accounts
+- Score rings on the directory page are color-coded: green (≥ 75), amber (≥ 55), red (below 55)
+- Applicants see their full breakdown privately before deciding to publish
+
+---
+
+## Run it
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
-
-## Verify locally
+Hit `http://localhost:3000`.
 
 ```bash
 npm run lint
 npm run build
-npm run eval:cases
+npm run eval:cases   # run scoring test cases
 ```
 
-## Current limitations
+---
 
-- persistence is local JSON storage, not Postgres/Supabase yet
-- uploads store filenames only, not file contents
-- Plaid/bank connection is simulated
-- identity verification is self-asserted in the demo flow
-- attestation records are demo-only and not cryptographic signatures yet
-- public snapshots currently default to the applicant's full name
-- HUD case IDs are supported as system-owned fields, but the current app does not assign them yet
+## Known limitations
+
+- **Storage**: local JSON (`.data/credora-db.json`), not Postgres/Supabase yet
+- **Uploads**: filenames only, file contents not stored
+- **Plaid**: simulated bank connection
+- **Identity**: self-asserted in the demo flow
+- **Attestations**: demo hashes only, not real cryptographic signatures
+- **HUD case IDs**: supported in the data model, not assigned by the app yet
