@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { auth, signOut } from "@/auth";
 
 import { listReports } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await auth();
+  const isLoggedIn = !!session;
   const sampleReportId = listReports()[0]?.id ?? "";
 
   return (
@@ -15,8 +18,28 @@ export default function HomePage() {
           <span>Credora</span>
         </Link>
         <nav className="site-nav">
-          <Link href="/applicant">Applicant flow</Link>
-          <Link href={`/review/${sampleReportId}`}>Reviewer demo</Link>
+          {isLoggedIn ? (
+            <form
+              action={async () => {
+                "use server";
+                await signOut({ redirectTo: "/" });
+              }}
+            >
+              <button type="submit" className="text-link" style={{ fontSize: "inherit" }}>
+                Sign out ({session.user?.name})
+              </button>
+            </form>
+          ) : (
+            <Link href="/login" className="text-link">
+              Sign in
+            </Link>
+          )}
+          {(!isLoggedIn || (session?.user as any)?.role === "applicant") && (
+            <Link href="/applicant">Applicant flow</Link>
+          )}
+          {(!isLoggedIn || (session?.user as any)?.role === "reviewer") && (
+            <Link href={`/review/${sampleReportId}`}>Reviewer demo</Link>
+          )}
         </nav>
       </header>
 

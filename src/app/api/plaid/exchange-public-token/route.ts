@@ -1,17 +1,24 @@
 import { plaidClient } from "@/lib/plaid";
+import { plaidExchangeSchema, parseBody } from "@/lib/schemas";
+import { requireAuth } from "@/lib/auth-guard";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const { public_token } = await request.json();
+  const session = await requireAuth();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const raw = await request.json();
+  const parsed = parseBody(plaidExchangeSchema, raw);
+  if (!parsed.success) return parsed.error;
 
   try {
     const response = await plaidClient.itemPublicTokenExchange({
-      public_token,
+      public_token: parsed.data.public_token,
     });
 
-    // In a real app, you would save response.data.access_token to your database.
-    // For this demo, we just return a success message.
     return Response.json({
       access_token: response.data.access_token,
       item_id: response.data.item_id,
