@@ -13,11 +13,14 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith(prefix)
   );
 
-  // Check for the NextAuth session token cookie
-  const sessionToken =
-    request.cookies.get("authjs.session-token")?.value ||
-    request.cookies.get("__Secure-authjs.session-token")?.value;
+  const secureCookieName = "__Secure-authjs.session-token";
+  const standardCookieName = "authjs.session-token";
 
+  // Check for the NextAuth session token cookie
+  const secureTokenValue = request.cookies.get(secureCookieName)?.value;
+  const standardTokenValue = request.cookies.get(standardCookieName)?.value;
+
+  const sessionToken = secureTokenValue || standardTokenValue;
   const isLoggedIn = !!sessionToken;
 
   // Redirect unauthenticated users to login
@@ -35,7 +38,8 @@ export async function proxy(request: NextRequest) {
   // Role-based access control for protected paths
   if (isProtectedPath && isLoggedIn && sessionToken) {
     try {
-      const token = await decode({ token: sessionToken, secret: AUTH_SECRET, salt: "authjs.session-token" });
+      const salt = secureTokenValue ? secureCookieName : standardCookieName;
+      const token = await decode({ token: sessionToken, secret: AUTH_SECRET, salt });
       const role = token?.role as string | undefined;
 
       // Applicants cannot access reviewer pages
