@@ -4,9 +4,7 @@ export type UserRole = "applicant" | "reviewer";
 
 export async function requireAuth() {
   const session = await auth();
-  if (!session?.user) {
-    return null;
-  }
+  if (!session?.user) return null;
   return session;
 }
 

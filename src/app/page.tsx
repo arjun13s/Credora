@@ -29,14 +29,7 @@ export default async function HomePage() {
             <Logo size={32} />
             <span>Credora</span>
           </Link>
-          <nav className="site-nav">
-            {isLoggedIn && isApplicant && (
-              <Link href="/applicant">My profile</Link>
-            )}
-            {isLoggedIn && isReviewer && (
-              <Link href="/review">Reviewer Portal</Link>
-            )}
-          </nav>
+          <nav className="site-nav" />
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             {isLoggedIn && (
               <form action={async () => { "use server"; await signOut({ redirectTo: "/" }); }}>

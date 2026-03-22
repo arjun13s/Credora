@@ -10,7 +10,6 @@ export interface User {
   name: string;
 }
 
-// Hardcode passwords as 'password' for demo purposes
 const DEMO_PASSWORD_HASH = bcrypt.hashSync('password', 10);
 
 export const users: User[] = [
