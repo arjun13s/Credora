@@ -103,7 +103,7 @@ export interface ProfileSummary {
   id: string;
   applicantName: string;
   applicantEmail: string;
-  persona: PersonaKey;
+  persona?: PersonaKey;
   personaLabel: string;
   targetRent: number;
   generatedAt: string;
@@ -127,7 +127,7 @@ export interface ProfileSummary {
 export interface ApplicantInput {
   applicantName: string;
   applicantEmail: string;
-  persona: PersonaKey;
+  persona?: PersonaKey;
   targetRent: number;
   monthlyIncome: number;
   averageCushion: number;

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { ReviewerPageClient } from "@/components/reviewer-page-client";
-import { getReport } from "@/lib/store";
+import { ProfileClient } from "@/components/profile-client";
+import { getReport } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -17,5 +17,5 @@ export default async function ReviewPage({
     notFound();
   }
 
-  return <ReviewerPageClient initialReport={report} />;
+  return <ProfileClient initialReport={report} defaultTab="reviewer" />;
 }

@@ -1,4 +1,4 @@
-import { updateConsentStatus } from "@/lib/store";
+import { updateConsentStatus } from "@/lib/db";
 import type { ConsentGrant } from "@/lib/types";
 
 export const dynamic = "force-dynamic";

@@ -1,4 +1,4 @@
-import { recordReview } from "@/lib/store";
+import { recordReview } from "@/lib/db";
 import type { ReviewAction } from "@/lib/types";
 
 export const dynamic = "force-dynamic";

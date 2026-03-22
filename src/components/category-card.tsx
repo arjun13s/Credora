@@ -2,6 +2,8 @@ import { BandPill } from "@/components/band-pill";
 import type { TrustCategory } from "@/lib/types";
 
 export function CategoryCard({ category }: { category: TrustCategory }) {
+  const score = typeof category.score === "number" ? category.score : 0;
+
   return (
     <article className="card stack-sm">
       <div className="row row--space-start">
@@ -12,11 +14,20 @@ export function CategoryCard({ category }: { category: TrustCategory }) {
         <div className="stack-xs align-end">
           <BandPill tone={category.band}>{category.band}</BandPill>
           <strong className="score-number">
-            {typeof category.score === "number" ? category.score : "--"}
+            {typeof category.score === "number" ? Math.round(category.score) : "--"}
           </strong>
         </div>
       </div>
+
+      <div className="score-bar">
+        <div
+          className="score-bar-fill"
+          style={{ width: `${score}%` }}
+        />
+      </div>
+
       <p className="body-muted">{category.rationale}</p>
+
       <div className="chip-group">
         {category.drivers.map((driver) => (
           <span key={driver} className="chip chip--soft">
@@ -24,6 +35,7 @@ export function CategoryCard({ category }: { category: TrustCategory }) {
           </span>
         ))}
       </div>
+
       {category.flags.length > 0 ? (
         <div className="stack-xs">
           <span className="mini-label">Review flags</span>

@@ -1,4 +1,4 @@
-import { addDispute } from "@/lib/store";
+import { addDispute } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 

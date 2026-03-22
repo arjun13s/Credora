@@ -1,4 +1,4 @@
-import { createReport } from "@/lib/store";
+import { createReport } from "@/lib/db";
 import type { ApplicantInput } from "@/lib/types";
 
 export const dynamic = "force-dynamic";

@@ -1,4 +1,4 @@
-import { getReport } from "@/lib/store";
+import { getReport } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 

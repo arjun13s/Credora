@@ -1,5 +1,14 @@
+/**
+ * In-memory persistence — dev/demo only.
+ *
+ * To connect a real backend, replace this file's implementation
+ * (or swap the export in index.ts) with Prisma, Drizzle, Supabase,
+ * Firebase, or any other adapter that satisfies the same function
+ * signatures exported from index.ts.
+ */
+
 import { buildProfileSummary } from "@/lib/scoring";
-import { getDefaultApplicantInput } from "@/lib/demo-scenarios";
+import { getDefaultApplicantInput } from "@/lib/db/seed";
 import type {
   AccessLog,
   ApplicantInput,

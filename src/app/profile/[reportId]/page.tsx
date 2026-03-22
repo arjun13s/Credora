@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { ReportPageClient } from "@/components/report-page-client";
-import { getReport } from "@/lib/store";
+import { ProfileClient } from "@/components/profile-client";
+import { getReport } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -17,5 +17,5 @@ export default async function ProfilePage({
     notFound();
   }
 
-  return <ReportPageClient initialReport={report} />;
+  return <ProfileClient initialReport={report} defaultTab="applicant" />;
 }

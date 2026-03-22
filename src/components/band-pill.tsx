@@ -16,26 +16,26 @@ function toneClass(tone: PillTone) {
     case "Strong":
     case "High":
     case "Verified":
-      return "pill pill--positive";
+      return "status-tag status-tag--positive";
     case "Moderate":
     case "Medium":
     case "User provided":
     case "Recommended for manual approval path":
     case "Proceed to manual approval review":
-      return "pill pill--balanced";
+      return "status-tag status-tag--balanced";
     case "Weak":
     case "Low":
     case "Potential inconsistency detected":
     case "Missing":
-      return "pill pill--caution";
+      return "status-tag status-tag--caution";
     case "Insufficient data":
     case "Needs manual review":
     case "Continue manual review":
     case "Needs more information":
-      return "pill pill--neutral";
+      return "status-tag status-tag--neutral";
     case "Unknown":
     default:
-      return "pill pill--neutral";
+      return "status-tag status-tag--neutral";
   }
 }
 

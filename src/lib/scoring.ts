@@ -1,4 +1,3 @@
-import { getPresetByKey } from "@/lib/demo-scenarios";
 import type {
   AccessLog,
   ApplicantInput,
@@ -7,7 +6,6 @@ import type {
   EvidenceItem,
   ProfileSummary,
   RecommendationState,
-  ScenarioPreset,
   TrustBand,
   TrustCategory,
   VerificationResult,
@@ -478,7 +476,7 @@ function computeConfidence(input: ApplicantInput, verification: VerificationResu
 }
 
 function buildNarrative(
-  preset: ScenarioPreset,
+  applicantName: string,
   overallScore: number | null,
   confidence: ConfidenceBand,
   recommendation: RecommendationState,
@@ -490,21 +488,16 @@ function buildNarrative(
     .map((category) => category.title.toLowerCase());
   const weakest = categories.find((category) => category.band === "Weak");
 
-  const lead =
-    overallScore === null
-      ? `${preset.label} profile has not assembled enough evidence for a meaningful reliability read yet.`
-      : `${preset.label} profile generated an explainable reliability score of ${overallScore} with ${confidence.toLowerCase()} confidence.`;
+  const name = applicantName.trim() || "This applicant";
 
-  const strengths =
-    strongest.length > 0
-      ? `Verified strength areas include ${strongest.join(" and ")}.`
-      : "The profile does not yet show a clearly strong verified category.";
+  if (overallScore === null) {
+    return `${name}'s profile lacks enough evidence for a reliability read. ${recommendation}.`;
+  }
 
-  const caution = weakest
-    ? `${weakest.title} is the main caution area, so the system keeps a human in the loop.`
-    : "No category triggered an automatic caution flag beyond normal manual review expectations.";
+  const strongList = strongest.length > 0 ? ` Strong areas: ${strongest.join(", ")}.` : "";
+  const cautionNote = weakest ? ` ${weakest.title} is the main caution area.` : "";
 
-  return `${lead} ${strengths} ${caution} Final state: ${recommendation}.`;
+  return `Score of ${overallScore} with ${confidence.toLowerCase()} confidence.${strongList}${cautionNote}`;
 }
 
 function buildRecommendation(
@@ -594,7 +587,6 @@ function buildRiskFlags(
 
 export function buildProfileSummary(input: ApplicantInput): ProfileSummary {
   const constrainedInput = applyConsentBoundaries(input);
-  const preset = getPresetByKey(constrainedInput.persona);
   const generatedAt = new Date().toISOString();
   const verification = buildVerification(constrainedInput);
   const categories = createCategories(constrainedInput);
@@ -625,8 +617,7 @@ export function buildProfileSummary(input: ApplicantInput): ProfileSummary {
     id: crypto.randomUUID(),
     applicantName: constrainedInput.applicantName,
     applicantEmail: constrainedInput.applicantEmail,
-    persona: constrainedInput.persona,
-    personaLabel: preset.label,
+    personaLabel: "",
     targetRent: constrainedInput.targetRent,
     generatedAt,
     validUntil: addDays(new Date(generatedAt), 14),
@@ -634,7 +625,7 @@ export function buildProfileSummary(input: ApplicantInput): ProfileSummary {
     confidence,
     recommendation,
     narrative: buildNarrative(
-      preset,
+      constrainedInput.applicantName,
       overallScore,
       confidence,
       recommendation,

@@ -1,4 +1,4 @@
-import { logReportAccess } from "@/lib/store";
+import { logReportAccess } from "@/lib/db";
 import type { AccessLog } from "@/lib/types";
 
 export const dynamic = "force-dynamic";

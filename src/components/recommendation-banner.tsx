@@ -3,31 +3,60 @@ import { formatDate } from "@/lib/format";
 import type { ProfileSummary } from "@/lib/types";
 
 export function RecommendationBanner({ report }: { report: ProfileSummary }) {
+  const rawScore = report.overallScore;
+  const score = rawScore !== null ? Math.round(rawScore) : null;
+  const ringPct = score !== null ? score : 0;
+
   return (
-    <section className="hero-card stack-md">
-      <div className="row row--space-start row--top">
-        <div className="stack-sm">
+    <section
+      className="hero-card"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        gap: "2rem",
+        alignItems: "start",
+      }}
+    >
+      {/* Left: name + narrative */}
+      <div className="stack-md">
+        <div className="stack-xs">
           <span className="eyebrow">Rental reliability profile</span>
-          <h1>{report.applicantName}</h1>
-          <p className="lede">
-            {report.personaLabel}. Generated for housing screening only, with
-            applicant-visible evidence and a dispute path.
-          </p>
+          <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.8rem)", maxWidth: "none" }}>
+            {report.applicantName}
+          </h1>
         </div>
-        <div className="score-panel">
-          <span className="score-kicker">Explainable score</span>
-          <strong className="hero-score">
-            {report.overallScore !== null ? report.overallScore : "--"}
-          </strong>
-          <BandPill tone={report.confidence}>{report.confidence} confidence</BandPill>
+
+        <div className="chip-group">
+          <BandPill tone={report.recommendation}>{report.recommendation}</BandPill>
+          <span className="chip chip--outline">
+            Valid through {formatDate(report.validUntil)}
+          </span>
+          <span className="chip chip--outline">
+            Target rent ${report.targetRent}/mo
+          </span>
         </div>
+
+        <p className="body-strong">{report.narrative}</p>
       </div>
-      <div className="chip-group">
-        <BandPill tone={report.recommendation}>{report.recommendation}</BandPill>
-        <span className="chip chip--outline">Valid through {formatDate(report.validUntil)}</span>
-        <span className="chip chip--outline">Target rent ${report.targetRent}/mo</span>
+
+      {/* Right: score ring */}
+      <div className="score-panel">
+        <span className="eyebrow">Score</span>
+        <div
+          className="score-ring-wrapper"
+          style={
+            { "--target-score": `${ringPct}%` } as React.CSSProperties
+          }
+        >
+          <div className="score-ring-inner">
+            <strong className="hero-score">
+              {score !== null ? score : "--"}
+            </strong>
+            {score !== null && <span className="score-max">/ 100</span>}
+          </div>
+        </div>
+        <BandPill tone={report.confidence}>{report.confidence} confidence</BandPill>
       </div>
-      <p className="body-strong">{report.narrative}</p>
     </section>
   );
 }
