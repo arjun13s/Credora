@@ -9,6 +9,10 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  if (pathname.startsWith("/auth")) {
+    return authResponse;
+  }
+
   const isProtectedPath = PROTECTED_PREFIXES.some((prefix) =>
     pathname.startsWith(prefix)
   );
