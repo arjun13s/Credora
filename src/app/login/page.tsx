@@ -3,6 +3,7 @@
 import { signIn } from "next-auth/react";
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Logo } from "@/components/logo";
 
 function LoginForm() {
   const router = useRouter();
@@ -45,8 +46,8 @@ function LoginForm() {
     <div className="marketing-shell" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div className="card stack-md" style={{ maxWidth: 420, width: "100%" }}>
         <div className="stack-sm" style={{ textAlign: "center" }}>
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <span className="brand-mark">C</span>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.25rem" }}>
+            <Logo size={40} />
           </div>
           <h2>Sign in to Credora</h2>
           <p className="body-muted">Choose a demo account to continue</p>
