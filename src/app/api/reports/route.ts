@@ -1,11 +1,20 @@
 import { createReport } from "@/lib/db";
-import type { ApplicantInput } from "@/lib/types";
+import { applicantInputSchema, parseBody } from "@/lib/schemas";
+import { requireAuth } from "@/lib/auth-guard";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const input = (await request.json()) as ApplicantInput;
-  const report = createReport(input);
+  const session = await requireAuth();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const raw = await request.json();
+  const parsed = parseBody(applicantInputSchema, raw);
+  if (!parsed.success) return parsed.error;
+
+  const report = createReport(parsed.data);
 
   return Response.json(report, { status: 201 });
 }

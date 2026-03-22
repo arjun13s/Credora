@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { auth, signOut } from "@/auth";
 
 import { Logo } from "@/components/logo";
 import { listReports } from "@/lib/db";
@@ -12,7 +13,9 @@ const MOCKUP_CATEGORIES = [
   { label: "Balance stability",   score: "67", pct: "67%", color: "#d97706", delay: "1.0s" },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await auth();
+  const isLoggedIn = !!session;
   const sampleReportId = listReports()[0]?.id ?? "";
 
   return (
@@ -25,16 +28,35 @@ export default function HomePage() {
             <span>Credora</span>
           </Link>
           <nav className="site-nav">
-            <Link href="/applicant">For applicants</Link>
-            <Link href={`/profile/${sampleReportId}`}>Demo profile</Link>
+            {(!isLoggedIn || (session?.user as any)?.role === "applicant") && (
+              <Link href="/applicant">For applicants</Link>
+            )}
+            {(!isLoggedIn || (session?.user as any)?.role === "reviewer") && (
+              <Link href={`/profile/${sampleReportId}`}>Demo profile</Link>
+            )}
           </nav>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <Link className="button button--ghost" href="/applicant" style={{ height: "36px", padding: "0 1rem" }}>
-              Sign in
-            </Link>
-            <Link className="button button--primary" href="/applicant" style={{ height: "36px", padding: "0 1rem" }}>
-              Get started
-            </Link>
+            {isLoggedIn ? (
+              <form
+                action={async () => {
+                  "use server";
+                  await signOut({ redirectTo: "/" });
+                }}
+              >
+                <button type="submit" className="button button--ghost" style={{ height: "36px", padding: "0 1rem" }}>
+                  Sign out ({session.user?.name})
+                </button>
+              </form>
+            ) : (
+              <>
+                <Link className="button button--ghost" href="/login" style={{ height: "36px", padding: "0 1rem" }}>
+                  Sign in
+                </Link>
+                <Link className="button button--primary" href="/applicant" style={{ height: "36px", padding: "0 1rem" }}>
+                  Get started
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -156,7 +178,6 @@ export default function HomePage() {
           <div className="feature-grid">
             {[
               {
-                // Identity confidence — fingerprint-inspired concentric arcs + center dot
                 icon: (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
                     <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/>
@@ -169,7 +190,6 @@ export default function HomePage() {
                 body: "Verify identity and confirm bank account ownership before any signal reaches a reviewer.",
               },
               {
-                // Payment continuity — ascending streak dots on a stepped path
                 icon: (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 19 H6 V15 H10 V11 H14 V7 H18 V4"/>
@@ -184,7 +204,6 @@ export default function HomePage() {
                 body: "Surface rent and utility streaks from real bank-derived cash-flow patterns. Not just credit age.",
               },
               {
-                // Full explainability — open document with exposed score rows
                 icon: (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
                     <rect x="4" y="2" width="16" height="20" rx="2"/>
@@ -199,7 +218,6 @@ export default function HomePage() {
                 body: "Every category has a score, rationale, and driver list. No black boxes, no hidden signals.",
               },
               {
-                // Consent by design — two overlapping circles, shared intersection highlighted
                 icon: (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
                     <circle cx="9"  cy="12" r="6"/>
@@ -212,7 +230,6 @@ export default function HomePage() {
                 body: "Each data source requires explicit consent. Applicants see exactly what reviewers see.",
               },
               {
-                // Dispute path built in — forking path that converges at a flag endpoint
                 icon: (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="4" cy="12" r="1.8" fill="currentColor" stroke="none"/>
@@ -229,7 +246,6 @@ export default function HomePage() {
                 body: "Challenge any inaccurate signal before adverse action is taken, with a structured escalation flow.",
               },
               {
-                // Revocable sharing — key with a dashed time-bound ring around it
                 icon: (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
                     <circle cx="9" cy="9" r="4" />
