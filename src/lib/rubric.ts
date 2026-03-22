@@ -3,10 +3,12 @@ import type {
   ConfidenceBand,
   DeterministicFeatureSet,
   FinalGradingResult,
+  HudCategoryKey,
   NormalizedEvidenceBundle,
   RecommendationStatus,
   TrustBand,
 } from "@/lib/types";
+import { buildHudCategoryScores, toHudDecisionBand, toHudNumericConfidence } from "@/lib/hud-contract";
 
 const RUBRIC_WEIGHTS: Record<CategoryAssessment["key"], number> = {
   identity_confidence: 15,
@@ -458,7 +460,33 @@ export function buildDeterministicEvaluation(bundle: NormalizedEvidenceBundle): 
     manualReviewTriggers: unique(manualReviewTriggers).slice(0, 5),
     confidenceNotes,
     categoryAssessments,
+    hudDecisionBand: toHudDecisionBand(recommendation),
+    hudCategoryScores: {} as Record<HudCategoryKey, number>,
+    numericConfidence: toHudNumericConfidence(confidenceFloor),
   };
+
+  finalResult.hudCategoryScores = buildHudCategoryScores({
+    result: finalResult,
+    features: {
+      weightedScore,
+      weightedBand: bandFromScore(weightedScore),
+      confidenceFloor,
+      coverageScore,
+      contradictions,
+      thinFile,
+      verifiedEvidenceCount,
+      verifiedCategoryCount,
+      selfReportedCategoryCount,
+      missingEvidence: finalResult.missingEvidence,
+      strengths: finalResult.strengths,
+      issues: finalResult.issues,
+      manualReviewTriggers: finalResult.manualReviewTriggers,
+      reasonCodes: unique(reasonCodes),
+      rubricWeights: RUBRIC_WEIGHTS,
+      categoryAssessments,
+    },
+    normalizedEvidence: bundle,
+  });
 
   return {
     features: {

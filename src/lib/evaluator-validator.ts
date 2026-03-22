@@ -235,6 +235,9 @@ export function validateExternalEvaluatorResponse(
         band: normalizedBand,
       };
     }),
+    hudDecisionBand: fallback.hudDecisionBand,
+    hudCategoryScores: fallback.hudCategoryScores,
+    numericConfidence: fallback.numericConfidence,
   };
 
   return {

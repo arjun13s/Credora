@@ -1,29 +1,21 @@
-import { BandPill } from "@/components/band-pill";
+import { Check, X } from "lucide-react";
 import type { EvidenceItem } from "@/lib/types";
 
-function mapVerificationTone(verification: EvidenceItem["verificationState"]) {
-  switch (verification) {
-    case "verified":
-      return "Verified" as const;
-    case "self_reported":
-      return "Self reported" as const;
-    case "missing":
-    default:
-      return "Missing" as const;
-  }
-}
-
 export function EvidenceCard({ item }: { item: EvidenceItem }) {
-  const tone = mapVerificationTone(item.verificationState);
+  const isVerified = item.verificationState === "verified";
 
   return (
     <article className="card stack-sm">
       <div className="row row--space-start">
         <div className="stack-xs">
-          <span className="eyebrow eyebrow--subtle">{item.category}</span>
+          <span className="eyebrow eyebrow--subtle">{item.category.replaceAll("_", " ")}</span>
           <h3>{item.label}</h3>
         </div>
-        <BandPill tone={tone}>{tone}</BandPill>
+        {isVerified ? (
+          <Check size={18} style={{ color: "var(--positive)", flexShrink: 0 }} />
+        ) : (
+          <X size={18} style={{ color: "var(--caution)", flexShrink: 0 }} />
+        )}
       </div>
       <p className="body-muted">{item.detail}</p>
       <dl className="meta-grid">

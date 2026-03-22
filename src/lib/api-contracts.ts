@@ -4,6 +4,7 @@ import type {
   ConfidenceBand,
   FinalGradingResult,
   GradingResult,
+  PublishedSnapshotView,
   ProfileStatus,
   RecommendationStatus,
   TrustBand,
@@ -61,11 +62,14 @@ export interface ProfileSummary {
   email: string;
   useCase: UseCase;
   status: ProfileStatus;
-  shareStatus: ApplicantProfileView["profile"]["shareStatus"];
+  publicationStatus: ApplicantProfileView["profile"]["publicationStatus"];
   updatedAt: string;
   recommendationStatus?: RecommendationStatus;
   confidence?: ConfidenceBand;
   overallBand?: TrustBand;
+  latestPublishedSnapshotId?: string;
+  latestPublishedVersion?: number;
+  currentEvaluationPublished: boolean;
 }
 
 export interface DraftSnapshot {
@@ -102,6 +106,16 @@ export interface ProfileStatusPayload {
   submittedAt?: string;
   latestEvaluationAt?: string;
   recommendationStatus?: RecommendationStatus;
+  latestPublishedSnapshotId?: string;
+  latestPublishedVersion?: number;
+  currentEvaluationPublished: boolean;
+}
+
+export interface PublishProfileResponse {
+  view: ApplicantProfileView;
+  publishedSnapshot: PublishedSnapshotView;
+  created: boolean;
+  error?: string;
 }
 
 export function ok<T>(data: T): ApiSuccess<T> {

@@ -8,9 +8,18 @@ export type RecommendationStatus =
   | "Needs manual review"
   | "Insufficient evidence"
   | "Potential inconsistency detected";
+export type HudDecisionBand = "recommend" | "needs_manual_review";
+export type HudCategoryKey =
+  | "identity"
+  | "income"
+  | "housing"
+  | "payment"
+  | "employment"
+  | "completeness"
+  | "consistency";
 export type VerificationState = "verified" | "self_reported" | "missing";
 export type ConsentStatus = "active" | "revoked";
-export type ShareStatus = "private" | "shareable" | "revoked";
+export type PublicationStatus = "private" | "published";
 export type ProfileStatus =
   | "draft"
   | "submitted"
@@ -32,8 +41,7 @@ export type ConsentSource =
   | "identity_check"
   | "bank_connection"
   | "income_docs"
-  | "housing_docs"
-  | "profile_share";
+  | "housing_docs";
 
 export type EmploymentStatus =
   | "full_time"
@@ -82,15 +90,12 @@ export interface PersonalInformationInput {
   city: string;
   state: string;
   targetRent: number;
-  dateOfBirth?: string;
-  preferredMoveInDate?: string;
 }
 
 export interface IdentityVerificationInput {
   identityMethod: IdentityMethod | "";
   identityVerified: boolean;
   governmentIdFileNames: string[];
-  selfiePlanned: boolean;
   accountOwnerMatch: boolean;
 }
 
@@ -126,7 +131,6 @@ export interface FinancialStabilityInput {
 
 export interface SupportingDocumentsInput {
   additionalFileNames: string[];
-  applicantNotes: string;
 }
 
 export interface ApplicantConsentInput {
@@ -134,7 +138,6 @@ export interface ApplicantConsentInput {
   bank_connection: boolean;
   income_docs: boolean;
   housing_docs: boolean;
-  profile_share: boolean;
   consentToSubmit: boolean;
   retentionAcknowledged: boolean;
 }
@@ -166,10 +169,13 @@ export interface ApplicantProfile {
   applicantId: string;
   useCase: UseCase;
   status: ProfileStatus;
+  hudCaseId?: string;
   currentDraftId?: string;
   currentSubmissionId?: string;
   latestGradingResultId?: string;
-  shareStatus: ShareStatus;
+  latestPublishedSnapshotId?: string;
+  latestPublishedGradingResultId?: string;
+  publicationStatus: PublicationStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -188,6 +194,7 @@ export interface ApplicationDraft {
 export interface ProfileSubmission {
   id: string;
   profileId: string;
+  hudCaseId?: string;
   submittedAt: string;
   rawFormSnapshot: ApplicantProfileInput;
   version: number;
@@ -209,6 +216,7 @@ export interface EvidenceItem {
 export interface ConsentRecord {
   id: string;
   profileId: string;
+  submissionId: string;
   source: ConsentSource;
   grantedAt: string;
   expiresAt: string;
@@ -237,7 +245,6 @@ export interface IdentityEvidenceInput {
   identityVerified: boolean;
   accountOwnerMatch: boolean;
   governmentIdDocumentCount: number;
-  selfiePlanned: boolean;
   provenance: EvidenceProvenance;
 }
 
@@ -369,10 +376,14 @@ export interface FinalGradingResult {
   manualReviewTriggers: string[];
   confidenceNotes: string[];
   categoryAssessments: CategoryAssessment[];
+  hudDecisionBand: HudDecisionBand;
+  hudCategoryScores: Record<HudCategoryKey, number>;
+  numericConfidence: number;
 }
 
 export interface ExternalEvaluatorRequest {
   requestId: string;
+  caseId?: string;
   profileId: string;
   submissionId: string;
   useCase: UseCase;
@@ -419,11 +430,14 @@ export interface GradingResult {
   profileId: string;
   submissionId: string;
   rubricVersion: string;
+  evaluationStatus: "completed" | "fallback_completed";
+  externalRequestId?: string;
   provider: GradingProvider;
   mode: EvaluationMode;
   deterministicFeatures: DeterministicFeatureSet;
   evaluatorRequest?: ExternalEvaluatorRequest;
   evaluatorResponse?: ExternalEvaluatorResponse | null;
+  hudRecommendationPreview?: HudRecommendationPayload;
   finalResult: FinalGradingResult;
   fallbackUsed: boolean;
   warnings: string[];
@@ -431,30 +445,15 @@ export interface GradingResult {
   createdAt: string;
 }
 
-export interface ShareLink {
-  id: string;
-  profileId: string;
-  token: string;
-  expiresAt: string;
-  revokedAt?: string;
-  intendedAudience: string;
-}
-
 export interface DisputeCase {
   id: string;
   profileId: string;
+  submissionId?: string;
+  gradingResultId?: string;
+  publishedSnapshotId?: string;
   field: string;
   explanation: string;
   status: "open" | "under_review";
-  createdAt: string;
-}
-
-export interface ReviewerNote {
-  id: string;
-  profileId: string;
-  reviewerName: string;
-  note: string;
-  disposition: "Manual review advised" | "Need more documents" | "Proceed carefully";
   createdAt: string;
 }
 
@@ -470,19 +469,94 @@ export interface AuditLog {
 export interface AttestationRecord {
   id: string;
   profileId: string;
-  type: "signed_profile_export";
+  publishedSnapshotId?: string;
+  type: "signed_profile_export" | "published_snapshot_attestation";
+  attestationStatus: "demo" | "signed" | "anchored";
   payloadHash: string;
   signature: string;
   chainAnchor?: string;
   createdAt: string;
 }
 
-export interface ShareLinkView {
+export interface HudRecommendationPayload {
+  case_id: string;
+  submission_id: string;
+  recommendation: {
+    recommendation: HudDecisionBand;
+    decision_band: HudDecisionBand;
+    overall_score: number;
+    confidence: number;
+    display_rating: string;
+    category_scores: Record<HudCategoryKey, number>;
+    strengths: string[];
+    risks: string[];
+    issues: string[];
+    missing_evidence: string[];
+    manual_review_reasons: string[];
+    inconsistency_flags: string[];
+    summary: string;
+  };
+}
+
+export interface PublishedProfileSnapshot {
   id: string;
-  token: string;
-  expiresAt: string;
-  intendedAudience: string;
-  active: boolean;
+  profileId: string;
+  applicantId: string;
+  submissionId: string;
+  gradingResultId: string;
+  versionNumber: number;
+  previousSnapshotId?: string;
+  previousSnapshotHash?: string;
+  publicDisplayName: string;
+  payloadHash: string;
+  publishedAt: string;
+  publishedByApplicantConfirmedAt: string;
+  disclosureVersion: string;
+  publicPayload: {
+    schemaVersion: string;
+    applicantName: string;
+    useCase: UseCase;
+    overallScore: number | null;
+    overallBand: TrustBand;
+    confidence: ConfidenceBand;
+    recommendationStatus: RecommendationStatus;
+    summary: string;
+    strengths: string[];
+    riskFlags: string[];
+    issues: string[];
+    categoryAssessments: CategoryAssessment[];
+    rubricVersion: string;
+  };
+}
+
+export interface PublishedSnapshotView {
+  id: string;
+  profileId: string;
+  applicantId: string;
+  applicantName: string;
+  versionNumber: number;
+  gradingResultId: string;
+  previousSnapshotId?: string;
+  previousSnapshotHash?: string;
+  nextSnapshotId?: string;
+  isLatestVersion: boolean;
+  payloadHash: string;
+  publishedAt: string;
+  useCase: UseCase;
+  overallScore: number | null;
+  overallBand: TrustBand;
+  confidence: ConfidenceBand;
+  recommendationStatus: RecommendationStatus;
+  summary: string;
+  strengths: string[];
+  riskFlags: string[];
+  issues: string[];
+  categoryAssessments: CategoryAssessment[];
+  rubricVersion: string;
+  attestation?: Pick<
+    AttestationRecord,
+    "id" | "attestationStatus" | "payloadHash" | "signature" | "chainAnchor" | "createdAt"
+  >;
 }
 
 export interface ApplicantProfileView {
@@ -492,19 +566,11 @@ export interface ApplicantProfileView {
   evidence: EvidenceItem[];
   consents: ConsentRecord[];
   gradingResult?: GradingResult;
-  shareLink?: ShareLinkView;
+  latestPublishedSnapshot?: PublishedSnapshotView;
+  publishedSnapshots: PublishedSnapshotView[];
+  canPublishSnapshot: boolean;
   disputes: DisputeCase[];
-  reviewerNotes: ReviewerNote[];
   auditLogs: AuditLog[];
-}
-
-export interface ReviewerProfileView {
-  applicantName: string;
-  useCase: UseCase;
-  profileStatus: ProfileStatus;
-  gradingResult?: GradingResult;
-  evidence: EvidenceItem[];
-  shareLink: ShareLinkView;
 }
 
 export interface PersistedDatabase {
@@ -516,15 +582,14 @@ export interface PersistedDatabase {
   evidenceItems: EvidenceItem[];
   consentRecords: ConsentRecord[];
   gradingResults: GradingResult[];
-  shareLinks: ShareLink[];
+  publishedSnapshots: PublishedProfileSnapshot[];
   disputes: DisputeCase[];
-  reviewerNotes: ReviewerNote[];
   auditLogs: AuditLog[];
   attestations: AttestationRecord[];
 }
 
 export interface DemoScenario {
-  key: "newcomer" | "gig_worker" | "student" | "inconsistency";
+  key: string;
   label: string;
   description: string;
   input: ApplicantProfileInput;

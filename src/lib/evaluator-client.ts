@@ -1,4 +1,5 @@
 import { validateExternalEvaluatorResponse } from "@/lib/evaluator-validator";
+import { callHudLlm } from "@/lib/hud-llm-client";
 import type {
   ApplicantProfileInput,
   DeterministicFeatureSet,
@@ -25,6 +26,7 @@ function currentMode(): EvaluationMode {
 }
 
 export function buildExternalEvaluatorRequest(args: {
+  caseId?: string;
   profileId: string;
   submissionId: string;
   input: ApplicantProfileInput;
@@ -33,6 +35,7 @@ export function buildExternalEvaluatorRequest(args: {
 }): ExternalEvaluatorRequest {
   return {
     requestId: crypto.randomUUID(),
+    caseId: args.caseId,
     profileId: args.profileId,
     submissionId: args.submissionId,
     useCase: args.input.useCase,
@@ -99,35 +102,16 @@ function buildLocalMockResponse(
 async function callHudEvaluator(
   request: ExternalEvaluatorRequest,
 ): Promise<unknown> {
-  const evaluatorUrl = process.env.CREDORA_HUD_EVALUATOR_URL;
-  const timeoutMs = Number(process.env.CREDORA_HUD_EVALUATOR_TIMEOUT_MS ?? 2500);
+  const timeoutMs = Number(process.env.CREDORA_HUD_EVALUATOR_TIMEOUT_MS ?? 30000);
 
-  if (!evaluatorUrl) {
-    throw new Error("HUD evaluator URL is not configured.");
-  }
+  const result = await Promise.race([
+    callHudLlm(request),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("HUD LLM timed out.")), timeoutMs),
+    ),
+  ]);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let response: Response;
-
-  try {
-    response = await fetch(evaluatorUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-      body: JSON.stringify(request),
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!response.ok) {
-    throw new Error(`HUD evaluator request failed with ${response.status}.`);
-  }
-
-  return response.json();
+  return result;
 }
 
 export async function evaluatePreparedProfile(

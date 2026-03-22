@@ -7,14 +7,19 @@ import { BandPill } from "@/components/band-pill";
 import { CategoryCard } from "@/components/category-card";
 import { ConsentCard } from "@/components/consent-card";
 import { EvidenceCard } from "@/components/evidence-card";
+import { Logo } from "@/components/logo";
 import { RecommendationBanner } from "@/components/recommendation-banner";
 import { formatDateTime } from "@/lib/format";
+import type { PublishProfileResponse } from "@/lib/api-contracts";
 import type { ApplicantProfileView } from "@/lib/types";
 
 export function ProfileResultsClient({ initialView }: { initialView: ApplicantProfileView }) {
   const [view, setView] = useState(initialView);
   const [field, setField] = useState("housing history");
   const [explanation, setExplanation] = useState("");
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [disputeError, setDisputeError] = useState<string | null>(null);
+  const [disputeSubmitted, setDisputeSubmitted] = useState(false);
   const [isPending, startTransition] = useTransition();
   const hasLogged = useRef(false);
 
@@ -42,33 +47,44 @@ export function ProfileResultsClient({ initialView }: { initialView: ApplicantPr
       .catch(() => undefined);
   }, [view.profile.id]);
 
-  async function createShareLink() {
-    const response = await fetch(`/api/profiles/${view.profile.id}/share-links`, {
+  async function publishProfile() {
+    if (
+      !window.confirm(
+        "Publishing will create a permanent public snapshot of this scored profile. Anyone with the public URL will be able to access this version. This cannot be undone. Continue?",
+      )
+    ) {
+      return;
+    }
+
+    setPublishError(null);
+    const response = await fetch(`/api/profiles/${view.profile.id}/publish`, {
       method: "POST",
     });
 
-    if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as PublishProfileResponse | null;
+
+    if (response.status === 409) {
+      if (payload?.view) {
+        setView(payload.view);
+      }
+      setPublishError(
+        payload?.error ??
+          "This exact scored result is already public. Submit a newer scored version before publishing again.",
+      );
       return;
     }
 
-    const payload = (await response.json()) as { view: ApplicantProfileView };
-    setView(payload.view);
-  }
-
-  async function revokeShareLinks() {
-    const response = await fetch(`/api/profiles/${view.profile.id}/share-links`, {
-      method: "DELETE",
-    });
-
-    if (!response.ok) {
+    if (!response.ok || !payload?.view) {
+      setPublishError("Credora could not publish this snapshot right now. Please try again.");
       return;
     }
 
-    const payload = (await response.json()) as { view: ApplicantProfileView };
     setView(payload.view);
   }
 
   async function submitDispute() {
+    setDisputeError(null);
+    setDisputeSubmitted(false);
     const response = await fetch(`/api/profiles/${view.profile.id}/disputes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -76,23 +92,39 @@ export function ProfileResultsClient({ initialView }: { initialView: ApplicantPr
     });
 
     if (!response.ok) {
+      setDisputeError("Credora could not submit this dispute right now. Please try again.");
       return;
     }
 
     const payload = (await response.json()) as { view: ApplicantProfileView };
     setView(payload.view);
     setExplanation("");
+    setDisputeSubmitted(true);
   }
 
   const result = view.gradingResult?.finalResult;
-  const shareUrl =
-    view.shareLink && typeof window !== "undefined"
-      ? `${window.location.origin}/profiles/${view.profile.id}/reviewer?token=${view.shareLink.token}`
-      : undefined;
+  const publishedPath = view.latestPublishedSnapshot
+    ? `/published/${view.latestPublishedSnapshot.id}`
+    : undefined;
 
   return (
-    <div className="page-shell">
-      <RecommendationBanner view={view} />
+    <>
+      <header className="site-header">
+        <div className="site-header-inner">
+          <Link className="brand" href="/">
+            <Logo size={32} />
+            <span>Credora</span>
+          </Link>
+          <nav className="site-nav">
+            <Link href="/blockchain-technology">Blockchain technology</Link>
+            <Link href="/applicant-profile">New profile</Link>
+            <Link href="/review">Published Snapshots</Link>
+          </nav>
+        </div>
+      </header>
+
+      <div className="page-shell">
+        <RecommendationBanner view={view} />
 
       <section className="section-grid">
         <div className="section-main stack-lg">
@@ -233,8 +265,9 @@ export function ProfileResultsClient({ initialView }: { initialView: ApplicantPr
                 onClick={() => startTransition(() => void submitDispute())}
                 type="button"
               >
-                {isPending ? "Submitting..." : "Submit dispute"}
+                {isPending ? "Submitting..." : disputeSubmitted ? "Submitted!" : "Submit dispute"}
               </button>
+              {disputeError ? <p className="body-muted">{disputeError}</p> : null}
             </article>
           </section>
         </div>
@@ -242,38 +275,53 @@ export function ProfileResultsClient({ initialView }: { initialView: ApplicantPr
         <aside className="section-side stack-md">
           <article className="card stack-md sticky-card">
             <div className="stack-xs">
-              <span className="eyebrow eyebrow--subtle">Share profile</span>
-              <h2>Applicant-controlled sharing</h2>
+              <span className="eyebrow eyebrow--subtle">Publish snapshot</span>
+              <h2>Make this profile public</h2>
             </div>
             <p className="body-muted">
-              Your profile is private by default. Generate a revocable reviewer link
-              only when you are ready to share it.
+              This profile stays private until you publish it. Publishing creates a
+              permanent public snapshot that others can access and compare over time.
             </p>
-            {view.shareLink ? (
+            <div className="subtle-panel stack-sm">
+              <span className="mini-label">Important</span>
+              <p className="body-muted">
+                Publishing is the only way to use this profile publicly. Anyone with the public URL
+                can access the published version. Once a snapshot is published, it cannot be undone or edited.
+                Later publishes create a new linked version only after a newer scored profile exists.
+              </p>
+            </div>
+            {view.latestPublishedSnapshot ? (
               <div className="subtle-panel stack-sm">
-                <span className="mini-label">Reviewer link</span>
-                <p className="body-muted">{shareUrl}</p>
-                <small>Expires {formatDateTime(view.shareLink.expiresAt)}</small>
+                <span className="mini-label">Latest published snapshot</span>
+                <p className="body-muted">{publishedPath}</p>
+                <small>Published {formatDateTime(view.latestPublishedSnapshot.publishedAt)}</small>
               </div>
             ) : null}
             <div className="button-row">
-              <button className="button button--secondary" onClick={() => void createShareLink()} type="button">
-                Generate share link
+              <button
+                className="button button--secondary"
+                disabled={!view.canPublishSnapshot}
+                onClick={() => void publishProfile()}
+                type="button"
+              >
+                {view.latestPublishedSnapshot ? "Publish new scored version" : "Publish public snapshot"}
               </button>
-              {view.shareLink ? (
-                <>
-                  <Link
-                    className="button button--ghost"
-                    href={`/profiles/${view.profile.id}/reviewer?token=${view.shareLink.token}`}
-                  >
-                    Preview reviewer view
-                  </Link>
-                  <button className="button button--ghost" onClick={() => void revokeShareLinks()} type="button">
-                    Revoke access
-                  </button>
-                </>
+              {view.latestPublishedSnapshot ? (
+                <Link
+                  className="button button--ghost"
+                  href={`/published/${view.latestPublishedSnapshot.id}`}
+                >
+                  Open public snapshot
+                </Link>
               ) : null}
             </div>
+            <small className="body-muted">Cannot be undone.</small>
+            {!view.canPublishSnapshot && view.latestPublishedSnapshot ? (
+              <p className="body-muted">
+                This exact scored result has already been published. Submit a new profile version before publishing again.
+              </p>
+            ) : null}
+            {publishError ? <p className="body-muted">{publishError}</p> : null}
           </article>
 
           <article className="card stack-md">
@@ -288,36 +336,9 @@ export function ProfileResultsClient({ initialView }: { initialView: ApplicantPr
             </div>
           </article>
 
-          <article className="card stack-md">
-            <div className="stack-xs">
-              <span className="eyebrow eyebrow--subtle">Future portability</span>
-              <h2>Signed export hook</h2>
-            </div>
-            <div className="subtle-panel stack-sm">
-              <span className="mini-label">Not on blockchain in MVP</span>
-              <p className="body-muted">
-                Credora is future-ready for signed attestations later, but the current MVP keeps portability off-chain.
-              </p>
-            </div>
-          </article>
-
-          <article className="card stack-md">
-            <div className="stack-xs">
-              <span className="eyebrow eyebrow--subtle">Audit trail</span>
-              <h2>Profile activity</h2>
-            </div>
-            <ul className="timeline">
-              {view.auditLogs.slice(0, 8).map((entry) => (
-                <li key={entry.id}>
-                  <strong>{entry.action.replaceAll("_", " ")}</strong>
-                  <p>{entry.detail}</p>
-                  <small>{formatDateTime(entry.at)}</small>
-                </li>
-              ))}
-            </ul>
-          </article>
         </aside>
       </section>
     </div>
+    </>
   );
 }

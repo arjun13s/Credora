@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
 
 import { NoopAttestationEmitter } from "@/lib/attestations";
-import { demoScenarios, getDefaultApplicantProfileInput } from "@/lib/demo-scenarios";
-import { buildExternalEvaluatorRequest, evaluatePreparedProfile } from "@/lib/evaluator-client";
+import { getDemoPublishedSnapshots } from "@/lib/demo-published-snapshots";
+import { buildHudRecommendationPayload } from "@/lib/hud-contract";
 import {
-  buildEvidenceItems,
-  buildNormalizedEvidenceBundle,
-  normalizeApplicantInput,
-} from "@/lib/grading";
+  buildHudEvaluationRequest,
+  chooseEvaluationMode,
+  normalizeApplicationEvidence,
+  runHudEvaluation,
+  validateApplicationForEvaluation,
+} from "@/lib/hud-routing";
 import { readDatabase, writeDatabase } from "@/lib/persistence";
 import { buildDeterministicEvaluation } from "@/lib/rubric";
 import type {
@@ -21,13 +23,10 @@ import type {
   DisputeCase,
   GradingResult,
   PersistedDatabase,
+  PublishedProfileSnapshot,
+  PublishedSnapshotView,
   ProfileSubmission,
-  ReviewerNote,
-  ReviewerProfileView,
-  ShareLink,
-  ShareLinkView,
 } from "@/lib/types";
-import { validateApplicantProfileInput } from "@/lib/validators";
 import type {
   DraftSnapshot,
   ProfileStatusPayload,
@@ -121,11 +120,18 @@ function buildProfileSummary(
     email: applicant.email,
     useCase: profile.useCase,
     status: profile.status,
-    shareStatus: profile.shareStatus,
+    publicationStatus: profile.publicationStatus,
     updatedAt: profile.updatedAt,
     recommendationStatus: grading?.finalResult.recommendationStatus,
     confidence: grading?.finalResult.confidence,
     overallBand: grading?.finalResult.overallBand,
+    latestPublishedSnapshotId: profile.latestPublishedSnapshotId,
+    latestPublishedVersion: profile.latestPublishedSnapshotId
+      ? database.publishedSnapshots.find((entry) => entry.id === profile.latestPublishedSnapshotId)?.versionNumber
+      : undefined,
+    currentEvaluationPublished:
+      Boolean(profile.latestGradingResultId) &&
+      profile.latestPublishedGradingResultId === profile.latestGradingResultId,
   };
 }
 
@@ -150,6 +156,13 @@ function buildProfileStatusPayload(
     submittedAt: submission?.submittedAt,
     latestEvaluationAt: grading?.createdAt,
     recommendationStatus: grading?.finalResult.recommendationStatus,
+    latestPublishedSnapshotId: profile.latestPublishedSnapshotId,
+    latestPublishedVersion: profile.latestPublishedSnapshotId
+      ? database.publishedSnapshots.find((entry) => entry.id === profile.latestPublishedSnapshotId)?.versionNumber
+      : undefined,
+    currentEvaluationPublished:
+      Boolean(profile.latestGradingResultId) &&
+      profile.latestPublishedGradingResultId === profile.latestGradingResultId,
   };
 }
 
@@ -180,7 +193,11 @@ function buildEvaluationResultPayload(
   };
 }
 
-function createConsentRecords(profileId: string, input: ApplicantProfileInput): ConsentRecord[] {
+function createConsentRecords(
+  profileId: string,
+  submissionId: string,
+  input: ApplicantProfileInput,
+): ConsentRecord[] {
   const now = new Date();
   const entries: Array<{ source: ConsentRecord["source"]; active: boolean; scope: string; retentionDays: number }> = [
     {
@@ -207,17 +224,12 @@ function createConsentRecords(profileId: string, input: ApplicantProfileInput): 
       scope: "Lease, rent, and housing history evidence for housing review",
       retentionDays: 60,
     },
-    {
-      source: "profile_share",
-      active: input.consents.profile_share,
-      scope: "Single reviewer share link for housing-specific profile access",
-      retentionDays: 14,
-    },
   ];
 
   return entries.map((entry) => ({
     id: crypto.randomUUID(),
     profileId,
+    submissionId,
     source: entry.source,
     grantedAt: now.toISOString(),
     expiresAt: addDays(now, entry.retentionDays),
@@ -226,18 +238,90 @@ function createConsentRecords(profileId: string, input: ApplicantProfileInput): 
   }));
 }
 
-function toShareLinkView(link?: ShareLink): ShareLinkView | undefined {
-  if (!link) {
+function buildPublishedSnapshotView(
+  database: PersistedDatabase,
+  snapshot: PublishedProfileSnapshot,
+): PublishedSnapshotView | undefined {
+  const applicant = database.applicants.find((entry) => entry.id === snapshot.applicantId);
+  if (!applicant) {
     return undefined;
   }
 
+  const attestation = database.attestations.find(
+    (entry) => entry.publishedSnapshotId === snapshot.id,
+  );
+
+  const nextSnapshot = database.publishedSnapshots.find(
+    (entry) => entry.previousSnapshotId === snapshot.id,
+  );
+
   return {
-    id: link.id,
-    token: link.token,
-    expiresAt: link.expiresAt,
-    intendedAudience: link.intendedAudience,
-    active: !link.revokedAt && new Date(link.expiresAt).getTime() > Date.now(),
+    id: snapshot.id,
+    profileId: snapshot.profileId,
+    applicantId: snapshot.applicantId,
+    applicantName: snapshot.publicDisplayName || applicant.fullName,
+    versionNumber: snapshot.versionNumber,
+    gradingResultId: snapshot.gradingResultId,
+    previousSnapshotId: snapshot.previousSnapshotId,
+    previousSnapshotHash: snapshot.previousSnapshotHash,
+    nextSnapshotId: nextSnapshot?.id,
+    isLatestVersion: !nextSnapshot,
+    payloadHash: snapshot.payloadHash,
+    publishedAt: snapshot.publishedAt,
+    useCase: snapshot.publicPayload.useCase,
+    overallScore: snapshot.publicPayload.overallScore,
+    overallBand: snapshot.publicPayload.overallBand,
+    confidence: snapshot.publicPayload.confidence,
+    recommendationStatus: snapshot.publicPayload.recommendationStatus,
+    summary: snapshot.publicPayload.summary,
+    strengths: snapshot.publicPayload.strengths,
+    riskFlags: snapshot.publicPayload.riskFlags,
+    issues: snapshot.publicPayload.issues,
+    categoryAssessments: snapshot.publicPayload.categoryAssessments,
+    rubricVersion: snapshot.publicPayload.rubricVersion,
+    attestation: attestation
+      ? {
+          id: attestation.id,
+          attestationStatus: attestation.attestationStatus,
+          payloadHash: attestation.payloadHash,
+          signature: attestation.signature,
+          chainAnchor: attestation.chainAnchor,
+          createdAt: attestation.createdAt,
+        }
+      : undefined,
   };
+}
+
+function canonicalizeJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalizeJson(entry)).join(",")}]`;
+  }
+
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalizeJson(record[key])}`)
+    .join(",")}}`;
+}
+
+function buildPublishedPayloadHash(input: {
+  canonicalSchemaVersion: string;
+  profileId: string;
+  applicantId: string;
+  submissionId: string;
+  gradingResultId: string;
+  versionNumber: number;
+  previousSnapshotId?: string;
+  previousSnapshotHash?: string;
+  publicPayload: PublishedProfileSnapshot["publicPayload"];
+}) {
+  return createHash("sha256")
+    .update(canonicalizeJson(input))
+    .digest("hex");
 }
 
 function buildApplicantProfileView(
@@ -258,9 +342,14 @@ function buildApplicantProfileView(
   const gradingResult = profile.latestGradingResultId
     ? database.gradingResults.find((entry) => entry.id === profile.latestGradingResultId)
     : undefined;
-  const shareLink = toShareLinkView(
-    database.shareLinks.find((entry) => entry.profileId === profile.id && !entry.revokedAt),
-  );
+  const latestPublishedSnapshot = database.publishedSnapshots
+    .filter((entry) => entry.profileId === profile.id)
+    .sort((left, right) => right.versionNumber - left.versionNumber)[0];
+  const publishedSnapshots = database.publishedSnapshots
+    .filter((entry) => entry.profileId === profile.id)
+    .sort((left, right) => right.versionNumber - left.versionNumber)
+    .map((entry) => buildPublishedSnapshotView(database, entry))
+    .filter((entry): entry is PublishedSnapshotView => Boolean(entry));
 
   return {
     applicant,
@@ -269,76 +358,40 @@ function buildApplicantProfileView(
     evidence,
     consents,
     gradingResult,
-    shareLink,
+    latestPublishedSnapshot: publishedSnapshots[0],
+    publishedSnapshots,
+    canPublishSnapshot: Boolean(
+      gradingResult &&
+      (!latestPublishedSnapshot ||
+        latestPublishedSnapshot.gradingResultId !== gradingResult.id),
+    ),
     disputes: database.disputes.filter((entry) => entry.profileId === profile.id),
-    reviewerNotes: database.reviewerNotes.filter((entry) => entry.profileId === profile.id),
     auditLogs: database.auditLogs
       .filter((entry) => entry.profileId === profile.id)
       .sort((left, right) => right.at.localeCompare(left.at)),
   };
 }
 
-function buildReviewerProfileView(
-  database: PersistedDatabase,
-  profile: ApplicantProfile,
-  token: string,
-): ReviewerProfileView | undefined {
-  const shareLink = database.shareLinks.find(
-    (entry) =>
-      entry.profileId === profile.id &&
-      entry.token === token &&
-      !entry.revokedAt &&
-      new Date(entry.expiresAt).getTime() > Date.now(),
-  );
-
-  if (!shareLink) {
-    return undefined;
-  }
-
-  const applicant = database.applicants.find((entry) => entry.id === profile.applicantId);
-  const submission = profile.currentSubmissionId
-    ? database.submissions.find((entry) => entry.id === profile.currentSubmissionId)
-    : undefined;
-  const gradingResult = profile.latestGradingResultId
-    ? database.gradingResults.find((entry) => entry.id === profile.latestGradingResultId)
-    : undefined;
-
-  if (!applicant || !submission) {
-    return undefined;
-  }
-
-  return {
-    applicantName: applicant.fullName,
-    useCase: profile.useCase,
-    profileStatus: profile.status,
-    gradingResult,
-    evidence: database.evidenceItems.filter((entry) => entry.submissionId === submission.id),
-    shareLink: toShareLinkView(shareLink)!,
-  };
-}
-
-async function seedDefaultProfile(database: PersistedDatabase) {
-  if (database.profiles.length > 0) {
-    return database;
-  }
-
-  const seeded = await createApplicantProfileInternal(database, getDefaultApplicantProfileInput(), "seed");
-  return seeded.database;
+function buildPublicCategoryRationale(title: string) {
+  return `${title} is shown publicly as a score band and score only. Detailed evidence stays in the private profile.`;
 }
 
 async function createApplicantProfileInternal(
   database: PersistedDatabase,
   rawInput: ApplicantProfileInput,
-  source: "user" | "seed",
+  source: "user",
 ) {
-  const normalizedInput = normalizeApplicantInput(rawInput);
   const now = new Date().toISOString();
   const applicantId = crypto.randomUUID();
   const profileId = crypto.randomUUID();
   const draftId = crypto.randomUUID();
   const submissionId = crypto.randomUUID();
-  const shareLinkId = crypto.randomUUID();
-  const shareToken = crypto.randomUUID();
+  const preparedEvidence = normalizeApplicationEvidence({
+    profileId,
+    submissionId,
+    input: rawInput,
+  });
+  const normalizedInput = preparedEvidence.normalizedInput;
 
   const applicant = applicantFromInput(applicantId, normalizedInput, now);
 
@@ -349,7 +402,7 @@ async function createApplicantProfileInternal(
     status: "grading",
     currentDraftId: draftId,
     currentSubmissionId: submissionId,
-    shareStatus: normalizedInput.consents.profile_share ? "shareable" : "private",
+    publicationStatus: "private",
     createdAt: now,
     updatedAt: now,
   };
@@ -368,14 +421,15 @@ async function createApplicantProfileInternal(
   const submission: ProfileSubmission = {
     id: submissionId,
     profileId,
+    hudCaseId: profile.hudCaseId,
     submittedAt: now,
     rawFormSnapshot: normalizedInput,
     version: 1,
   };
 
-  const evidence = buildEvidenceItems(submissionId, normalizedInput);
-  const consents = createConsentRecords(profileId, normalizedInput);
-  const normalizedEvidence = buildNormalizedEvidenceBundle(profileId, submissionId, normalizedInput);
+  const evidence = preparedEvidence.evidenceItems;
+  const consents = createConsentRecords(profileId, submissionId, normalizedInput);
+  const normalizedEvidence = preparedEvidence.normalizedEvidence;
 
   database.applicants.push(applicant);
   database.profiles.push(profile);
@@ -383,16 +437,6 @@ async function createApplicantProfileInternal(
   database.submissions.push(submission);
   database.evidenceItems.push(...evidence);
   database.consentRecords.push(...consents);
-
-  if (normalizedInput.consents.profile_share) {
-    database.shareLinks.push({
-      id: shareLinkId,
-      profileId,
-      token: shareToken,
-      expiresAt: addDays(new Date(now), 14),
-      intendedAudience: "Housing reviewer",
-    });
-  }
 
   database.auditLogs.push(
     createAuditLog(profileId, "system", "profile_created", `Applicant profile was created via ${source}.`),
@@ -402,28 +446,45 @@ async function createApplicantProfileInternal(
   await writeDatabase(database);
 
   const deterministicEvaluation = buildDeterministicEvaluation(normalizedEvidence);
-  const evaluatorRequest = buildExternalEvaluatorRequest({
+  const route = chooseEvaluationMode({
+    input: normalizedInput,
+    normalizedEvidence,
+  });
+  const evaluatorRequest = buildHudEvaluationRequest({
+    caseId: submission.hudCaseId,
     profileId,
     submissionId,
     input: normalizedInput,
     normalizedEvidence,
     deterministicFeatures: deterministicEvaluation.features,
   });
-  const graded = await evaluatePreparedProfile(
+  const graded = await runHudEvaluation({
+    route,
     evaluatorRequest,
-    deterministicEvaluation.finalResult,
-  );
+    fallback: deterministicEvaluation.finalResult,
+  });
 
   const gradingResult: GradingResult = {
     id: crypto.randomUUID(),
     profileId,
     submissionId,
     rubricVersion: evaluatorRequest.rubricVersion,
+    evaluationStatus: graded.fallbackUsed ? "fallback_completed" : "completed",
+    externalRequestId: evaluatorRequest.caseId,
     provider: graded.provider,
     mode: graded.mode,
     deterministicFeatures: deterministicEvaluation.features,
     evaluatorRequest,
     evaluatorResponse: graded.evaluatorResponse,
+    hudRecommendationPreview: evaluatorRequest.caseId
+      ? buildHudRecommendationPayload({
+          caseId: evaluatorRequest.caseId,
+          submissionId,
+          result: graded.finalResult,
+          features: deterministicEvaluation.features,
+          normalizedEvidence,
+        })
+      : undefined,
     finalResult: graded.finalResult,
     fallbackUsed: graded.fallbackUsed,
     warnings: graded.warnings,
@@ -491,7 +552,7 @@ export async function createProfileDraft(initialPatch?: RecursivePartial<Applica
     useCase: input.useCase,
     status: "draft",
     currentDraftId: draftId,
-    shareStatus: "private",
+    publicationStatus: "private",
     createdAt: now,
     updatedAt: now,
   };
@@ -591,7 +652,7 @@ export async function submitProfileDraft(
     draft.version += 1;
   }
 
-  const validationIssues = validateApplicantProfileInput(draft.input);
+  const validationIssues = validateApplicationForEvaluation(draft.input);
   if (validationIssues.length > 0) {
     return {
       ok: false as const,
@@ -601,35 +662,39 @@ export async function submitProfileDraft(
     };
   }
 
-  const normalizedInput = normalizeApplicantInput(draft.input);
   const now = new Date().toISOString();
+  const submissionId = crypto.randomUUID();
+  const preparedEvidence = normalizeApplicationEvidence({
+    profileId,
+    submissionId,
+    input: draft.input,
+  });
+  const normalizedInput = preparedEvidence.normalizedInput;
   syncApplicantFromInput(applicant, normalizedInput);
   draft.input = normalizedInput;
   draft.updatedAt = now;
   draft.completionPercent = calculateCompletionPercent(normalizedInput);
 
-  const submissionId = crypto.randomUUID();
   const submission: ProfileSubmission = {
     id: submissionId,
     profileId,
+    hudCaseId: profile.hudCaseId,
     submittedAt: now,
     rawFormSnapshot: normalizedInput,
     version: database.submissions.filter((entry) => entry.profileId === profileId).length + 1,
   };
-  const evidence = buildEvidenceItems(submissionId, normalizedInput);
-  const consents = createConsentRecords(profileId, normalizedInput);
-  const normalizedEvidence = buildNormalizedEvidenceBundle(profileId, submissionId, normalizedInput);
+  const evidence = preparedEvidence.evidenceItems;
+  const consents = createConsentRecords(profileId, submissionId, normalizedInput);
+  const normalizedEvidence = preparedEvidence.normalizedEvidence;
 
   profile.status = "grading";
   profile.currentSubmissionId = submissionId;
   profile.updatedAt = now;
   profile.useCase = normalizedInput.useCase;
-  profile.shareStatus = normalizedInput.consents.profile_share ? "shareable" : profile.shareStatus;
 
   database.submissions.push(submission);
   database.evidenceItems = database.evidenceItems.filter((entry) => entry.submissionId !== submissionId);
   database.evidenceItems.push(...evidence);
-  database.consentRecords = database.consentRecords.filter((entry) => entry.profileId !== profileId);
   database.consentRecords.push(...consents);
   database.auditLogs.push(
     createAuditLog(profileId, "system", "submission_saved", "Draft was submitted and snapshot persisted."),
@@ -638,24 +703,44 @@ export async function submitProfileDraft(
   await writeDatabase(database);
 
   const deterministicEvaluation = buildDeterministicEvaluation(normalizedEvidence);
-  const evaluatorRequest = buildExternalEvaluatorRequest({
+  const route = chooseEvaluationMode({
+    input: normalizedInput,
+    normalizedEvidence,
+  });
+  const evaluatorRequest = buildHudEvaluationRequest({
+    caseId: submission.hudCaseId,
     profileId,
     submissionId,
     input: normalizedInput,
     normalizedEvidence,
     deterministicFeatures: deterministicEvaluation.features,
   });
-  const graded = await evaluatePreparedProfile(evaluatorRequest, deterministicEvaluation.finalResult);
+  const graded = await runHudEvaluation({
+    route,
+    evaluatorRequest,
+    fallback: deterministicEvaluation.finalResult,
+  });
   const gradingResult: GradingResult = {
     id: crypto.randomUUID(),
     profileId,
     submissionId,
     rubricVersion: evaluatorRequest.rubricVersion,
+    evaluationStatus: graded.fallbackUsed ? "fallback_completed" : "completed",
+    externalRequestId: evaluatorRequest.caseId,
     provider: graded.provider,
     mode: graded.mode,
     deterministicFeatures: deterministicEvaluation.features,
     evaluatorRequest,
     evaluatorResponse: graded.evaluatorResponse,
+    hudRecommendationPreview: evaluatorRequest.caseId
+      ? buildHudRecommendationPayload({
+          caseId: evaluatorRequest.caseId,
+          submissionId,
+          result: graded.finalResult,
+          features: deterministicEvaluation.features,
+          normalizedEvidence,
+        })
+      : undefined,
     finalResult: graded.finalResult,
     fallbackUsed: graded.fallbackUsed,
     warnings: graded.warnings,
@@ -664,18 +749,9 @@ export async function submitProfileDraft(
   };
   profile.latestGradingResultId = gradingResult.id;
   profile.status = deriveProfileStatus(graded.finalResult.recommendationStatus);
+  profile.latestPublishedGradingResultId = undefined;
   profile.updatedAt = new Date().toISOString();
   database.gradingResults.push(gradingResult);
-
-  if (normalizedInput.consents.profile_share && !database.shareLinks.find((entry) => entry.profileId === profileId && !entry.revokedAt)) {
-    database.shareLinks.push({
-      id: crypto.randomUUID(),
-      profileId,
-      token: crypto.randomUUID(),
-      expiresAt: addDays(new Date(), 14),
-      intendedAudience: "Housing reviewer",
-    });
-  }
 
   database.auditLogs.push(
     createAuditLog(
@@ -737,19 +813,39 @@ export async function getProfileEvaluation(profileId: string) {
   return buildEvaluationResultPayload(database, profile);
 }
 
-export async function getReviewerProfileView(profileId: string, token: string) {
+export async function getLatestPublishedSnapshotForProfile(profileId: string) {
   const database = await readDatabase();
-  const profile = database.profiles.find((entry) => entry.id === profileId);
+  const snapshot = database.publishedSnapshots
+    .filter((entry) => entry.profileId === profileId)
+    .sort((left, right) => right.versionNumber - left.versionNumber)[0];
 
-  if (!profile) {
-    return undefined;
-  }
+  return snapshot ? buildPublishedSnapshotView(database, snapshot) : undefined;
+}
 
-  return buildReviewerProfileView(database, profile, token);
+export async function getPublishedSnapshotView(snapshotId: string) {
+  const database = await readDatabase();
+  const snapshot = database.publishedSnapshots.find((entry) => entry.id === snapshotId);
+
+  return snapshot
+    ? buildPublishedSnapshotView(database, snapshot)
+    : getDemoPublishedSnapshots().find((entry) => entry.id === snapshotId);
+}
+
+export async function listPublishedSnapshots() {
+  const database = await readDatabase();
+  const persisted = database.publishedSnapshots
+    .slice()
+    .sort((left, right) => right.publishedAt.localeCompare(left.publishedAt))
+    .map((entry) => buildPublishedSnapshotView(database, entry))
+    .filter((entry): entry is PublishedSnapshotView => Boolean(entry));
+
+  return [...persisted, ...getDemoPublishedSnapshots()].sort((left, right) =>
+    right.publishedAt.localeCompare(left.publishedAt),
+  );
 }
 
 export async function createApplicantProfile(rawInput: ApplicantProfileInput) {
-  const validationIssues = validateApplicantProfileInput(rawInput);
+  const validationIssues = validateApplicationForEvaluation(rawInput);
 
   if (validationIssues.length > 0) {
     return {
@@ -758,7 +854,7 @@ export async function createApplicantProfile(rawInput: ApplicantProfileInput) {
     };
   }
 
-  const database = await seedDefaultProfile(await readDatabase());
+  const database = await readDatabase();
   const created = await createApplicantProfileInternal(database, rawInput, "user");
   await writeDatabase(created.database);
 
@@ -768,60 +864,123 @@ export async function createApplicantProfile(rawInput: ApplicantProfileInput) {
   };
 }
 
-export async function createShareLink(profileId: string) {
+export async function publishApplicantProfile(profileId: string) {
   const database = await readDatabase();
   const profile = database.profiles.find((entry) => entry.id === profileId);
 
-  if (!profile) {
+  if (!profile || !profile.currentSubmissionId || !profile.latestGradingResultId) {
     return undefined;
   }
 
-  database.shareLinks = database.shareLinks.map((entry) =>
-    entry.profileId === profileId && !entry.revokedAt
-      ? { ...entry, revokedAt: new Date().toISOString() }
-      : entry,
+  const applicant = database.applicants.find((entry) => entry.id === profile.applicantId);
+  const gradingResult = database.gradingResults.find(
+    (entry) => entry.id === profile.latestGradingResultId,
   );
+  if (!applicant || !gradingResult) {
+    return undefined;
+  }
 
-  const shareLink: ShareLink = {
-    id: crypto.randomUUID(),
-    profileId,
-    token: crypto.randomUUID(),
-    expiresAt: addDays(new Date(), 14),
-    intendedAudience: "Housing reviewer",
+  const previousSnapshot = database.publishedSnapshots
+    .filter((entry) => entry.profileId === profileId)
+    .sort((left, right) => right.versionNumber - left.versionNumber)[0];
+
+  if (profile.status === "grading" || profile.status === "draft") {
+    return undefined;
+  }
+
+  if (previousSnapshot && previousSnapshot.gradingResultId === gradingResult.id) {
+    return {
+      view: buildApplicantProfileView(database, profile),
+      publishedSnapshot: buildPublishedSnapshotView(database, previousSnapshot),
+      created: false as const,
+    };
+  }
+
+  const publicPayload: PublishedProfileSnapshot["publicPayload"] = {
+    schemaVersion: "credora.public-snapshot.v1",
+    applicantName: applicant.fullName,
+    useCase: profile.useCase,
+    overallScore: gradingResult.finalResult.overallScore,
+    overallBand: gradingResult.finalResult.overallBand,
+    confidence: gradingResult.finalResult.confidence,
+    recommendationStatus: gradingResult.finalResult.recommendationStatus,
+    summary: gradingResult.finalResult.summary,
+    strengths: gradingResult.finalResult.strengths,
+    riskFlags: gradingResult.finalResult.riskFlags,
+    issues: gradingResult.finalResult.issues,
+    categoryAssessments: gradingResult.finalResult.categoryAssessments.map((category) => ({
+      ...category,
+      rationale: buildPublicCategoryRationale(category.title),
+      evidenceLabels: [],
+      flags: [],
+    })),
+    rubricVersion: gradingResult.rubricVersion,
   };
 
-  database.shareLinks.push(shareLink);
-  profile.shareStatus = "shareable";
+  const snapshot: PublishedProfileSnapshot = {
+    id: crypto.randomUUID(),
+    profileId,
+    applicantId: applicant.id,
+    submissionId: profile.currentSubmissionId,
+    gradingResultId: gradingResult.id,
+    versionNumber: previousSnapshot ? previousSnapshot.versionNumber + 1 : 1,
+    previousSnapshotId: previousSnapshot?.id,
+    previousSnapshotHash: previousSnapshot?.payloadHash,
+    publicDisplayName: applicant.fullName,
+    payloadHash: buildPublishedPayloadHash({
+      canonicalSchemaVersion: "credora.public-hash.v1",
+      profileId,
+      applicantId: applicant.id,
+      submissionId: profile.currentSubmissionId,
+      gradingResultId: gradingResult.id,
+      versionNumber: previousSnapshot ? previousSnapshot.versionNumber + 1 : 1,
+      previousSnapshotId: previousSnapshot?.id,
+      previousSnapshotHash: previousSnapshot?.payloadHash,
+      publicPayload,
+    }),
+    publishedAt: new Date().toISOString(),
+    publishedByApplicantConfirmedAt: new Date().toISOString(),
+    disclosureVersion: "credora.publish-warning.v1",
+    publicPayload,
+  };
+
+  database.publishedSnapshots.push(snapshot);
+  profile.publicationStatus = "published";
+  profile.latestPublishedSnapshotId = snapshot.id;
+  profile.latestPublishedGradingResultId = gradingResult.id;
   profile.updatedAt = new Date().toISOString();
   database.auditLogs.push(
-    createAuditLog(profileId, "applicant", "share_link_created", "Applicant created a new reviewer share link."),
+    createAuditLog(
+      profileId,
+      "applicant",
+      "profile_published",
+      `Applicant published public snapshot version ${snapshot.versionNumber}.`,
+    ),
   );
+
+  const attestation = {
+    id: crypto.randomUUID(),
+    profileId,
+    publishedSnapshotId: snapshot.id,
+    type: "published_snapshot_attestation" as const,
+    attestationStatus: "demo" as const,
+    payloadHash: snapshot.payloadHash,
+    signature: `credora-demo-${snapshot.payloadHash.slice(0, 18)}`,
+    createdAt: snapshot.publishedAt,
+  };
+  database.attestations.push(attestation);
   await writeDatabase(database);
 
-  return toShareLinkView(shareLink);
-}
-
-export async function revokeShareLinks(profileId: string) {
-  const database = await readDatabase();
-  const profile = database.profiles.find((entry) => entry.id === profileId);
-
-  if (!profile) {
-    return undefined;
+  const snapshotView = buildPublishedSnapshotView(database, snapshot);
+  if (snapshotView) {
+    await attestationEmitter.emitPublishedSnapshotAttestation(snapshotView);
   }
 
-  database.shareLinks = database.shareLinks.map((entry) =>
-    entry.profileId === profileId && !entry.revokedAt
-      ? { ...entry, revokedAt: new Date().toISOString() }
-      : entry,
-  );
-  profile.shareStatus = "revoked";
-  profile.updatedAt = new Date().toISOString();
-  database.auditLogs.push(
-    createAuditLog(profileId, "applicant", "share_link_revoked", "Applicant revoked reviewer access."),
-  );
-  await writeDatabase(database);
-
-  return buildApplicantProfileView(database, profile);
+  return {
+    view: buildApplicantProfileView(database, profile),
+    publishedSnapshot: snapshotView,
+    created: true as const,
+  };
 }
 
 export async function addDispute(
@@ -838,6 +997,12 @@ export async function addDispute(
   database.disputes.push({
     id: crypto.randomUUID(),
     profileId,
+    submissionId: profile.currentSubmissionId,
+    gradingResultId: profile.latestGradingResultId,
+    publishedSnapshotId:
+      profile.latestPublishedGradingResultId === profile.latestGradingResultId
+        ? profile.latestPublishedSnapshotId
+        : undefined,
     field: dispute.field,
     explanation: dispute.explanation,
     status: "open",
@@ -845,36 +1010,6 @@ export async function addDispute(
   });
   database.auditLogs.push(
     createAuditLog(profileId, "applicant", "dispute_opened", `Applicant opened a dispute for ${dispute.field}.`),
-  );
-  await writeDatabase(database);
-
-  return buildApplicantProfileView(database, profile);
-}
-
-export async function addReviewerNote(
-  profileId: string,
-  note: Omit<ReviewerNote, "id" | "profileId" | "createdAt">,
-) {
-  const database = await readDatabase();
-  const profile = database.profiles.find((entry) => entry.id === profileId);
-
-  if (!profile) {
-    return undefined;
-  }
-
-  database.reviewerNotes.unshift({
-    id: crypto.randomUUID(),
-    profileId,
-    createdAt: new Date().toISOString(),
-    ...note,
-  });
-  database.auditLogs.push(
-    createAuditLog(
-      profileId,
-      "reviewer",
-      "reviewer_note_added",
-      `${note.reviewerName} recorded reviewer guidance: ${note.disposition}.`,
-    ),
   );
   await writeDatabase(database);
 
@@ -896,29 +1031,6 @@ export async function logProfileAccess(
   await writeDatabase(database);
 
   return buildApplicantProfileView(database, profile);
-}
-
-export async function getSeededScenarioPreview() {
-  const database = await seedDefaultProfile(await readDatabase());
-  await writeDatabase(database);
-  const profiles = database.profiles
-    .map((profile) => buildApplicantProfileView(database, profile))
-    .filter((view): view is ApplicantProfileView => Boolean(view));
-  const first = profiles[0];
-
-  if (!first) {
-    return undefined;
-  }
-
-  return {
-    profileId: first.profile.id,
-    shareLink: first.shareLink,
-    scenarios: demoScenarios.map((scenario) => ({
-      key: scenario.key,
-      label: scenario.label,
-      description: scenario.description,
-    })),
-  };
 }
 
 export function createSignedProfileDigest(view: ApplicantProfileView) {

@@ -12,12 +12,12 @@ export function RecommendationBanner({ view }: { view: ApplicantProfileView }) {
           <span className="eyebrow">Applicant Profile</span>
           <h1>{view.applicant.fullName}</h1>
           <p className="lede">
-            Housing-specific applicant trust profile generated for rental review,
-            with explainable evidence, confidence-aware evaluation, and applicant-visible controls.
+            Housing-specific application result generated for rental review,
+            with explainable evidence, confidence-aware evaluation, and a separate publish step for public use.
           </p>
         </div>
         <div className="score-panel">
-          <span className="score-kicker">Applicant trust summary</span>
+          <span className="score-kicker">Application result</span>
           <strong className="hero-score">
             {result?.overallScore ?? "--"}
           </strong>
@@ -31,6 +31,9 @@ export function RecommendationBanner({ view }: { view: ApplicantProfileView }) {
           {result?.recommendationStatus ?? "Needs manual review"}
         </BandPill>
         <BandPill tone={view.profile.status}>{view.profile.status.replaceAll("_", " ")}</BandPill>
+        <BandPill tone={view.profile.publicationStatus}>
+          {view.profile.publicationStatus === "published" ? "published" : "private"}
+        </BandPill>
         <span className="chip chip--outline">Updated {formatDate(view.profile.updatedAt)}</span>
         <span className="chip chip--outline">
           Target rent ${view.submission.rawFormSnapshot.personalInformation.targetRent}/mo

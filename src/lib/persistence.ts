@@ -1,13 +1,14 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { toHudDecisionBand, toHudNumericConfidence } from "@/lib/hud-contract";
 import type { PersistedDatabase } from "@/lib/types";
 
 const dataDir = path.join(process.cwd(), ".data");
 const dataFile = path.join(dataDir, "credora-db.json");
 
 const emptyDatabase: PersistedDatabase = {
-  schemaVersion: "credora.db.v2",
+  schemaVersion: "credora.db.v5",
   applicants: [],
   profiles: [],
   drafts: [],
@@ -15,9 +16,8 @@ const emptyDatabase: PersistedDatabase = {
   evidenceItems: [],
   consentRecords: [],
   gradingResults: [],
-  shareLinks: [],
+  publishedSnapshots: [],
   disputes: [],
-  reviewerNotes: [],
   auditLogs: [],
   attestations: [],
 };
@@ -52,6 +52,21 @@ function migrateDatabase(raw: unknown): PersistedDatabase {
                   migrated.finalResult.summary ??
                   migrated.finalResult.reasoningSummary ??
                   "Credora stored an earlier evaluation record for this applicant profile.",
+                hudDecisionBand:
+                  migrated.finalResult.hudDecisionBand ??
+                  toHudDecisionBand(migrated.finalResult.recommendationStatus),
+                hudCategoryScores: migrated.finalResult.hudCategoryScores ?? {
+                  identity: 0,
+                  income: 0,
+                  housing: 0,
+                  payment: 0,
+                  employment: 0,
+                  completeness: 0,
+                  consistency: 100,
+                },
+                numericConfidence:
+                  migrated.finalResult.numericConfidence ??
+                  toHudNumericConfidence(migrated.finalResult.confidence),
               }
             : {
                 overallScore: null,
@@ -67,7 +82,24 @@ function migrateDatabase(raw: unknown): PersistedDatabase {
                 manualReviewTriggers: [],
                 confidenceNotes: [],
                 categoryAssessments: [],
+                hudDecisionBand: "needs_manual_review" as const,
+                hudCategoryScores: {
+                  identity: 0,
+                  income: 0,
+                  housing: 0,
+                  payment: 0,
+                  employment: 0,
+                  completeness: 0,
+                  consistency: 100,
+                },
+                numericConfidence: 45,
               },
+          evaluationStatus:
+            migrated.evaluationStatus === "completed" || migrated.evaluationStatus === "fallback_completed"
+              ? migrated.evaluationStatus
+              : "completed",
+          externalRequestId: migrated.externalRequestId,
+          hudRecommendationPreview: migrated.hudRecommendationPreview,
         };
       })
     : [];
@@ -77,17 +109,43 @@ function migrateDatabase(raw: unknown): PersistedDatabase {
     ...parsed,
     schemaVersion: emptyDatabase.schemaVersion,
     applicants: Array.isArray(parsed.applicants) ? parsed.applicants : [],
-    profiles: Array.isArray(parsed.profiles) ? parsed.profiles : [],
+    profiles: Array.isArray(parsed.profiles)
+      ? parsed.profiles.map((entry) => {
+          const profile = entry as PersistedDatabase["profiles"][number] & {
+            shareStatus?: "private" | "shareable" | "revoked" | "published";
+            publicationStatus?: "private" | "published";
+          };
+
+          return {
+            ...profile,
+            publicationStatus:
+              profile.publicationStatus ??
+              (profile.shareStatus === "published" ? "published" : "private"),
+            latestPublishedSnapshotId: profile.latestPublishedSnapshotId,
+            latestPublishedGradingResultId: profile.latestPublishedGradingResultId,
+          };
+        })
+      : [],
     drafts: Array.isArray(parsed.drafts) ? parsed.drafts : [],
     submissions: Array.isArray(parsed.submissions) ? parsed.submissions : [],
     evidenceItems: Array.isArray(parsed.evidenceItems) ? parsed.evidenceItems : [],
     consentRecords: Array.isArray(parsed.consentRecords) ? parsed.consentRecords : [],
     gradingResults,
-    shareLinks: Array.isArray(parsed.shareLinks) ? parsed.shareLinks : [],
+    publishedSnapshots: Array.isArray(parsed.publishedSnapshots) ? parsed.publishedSnapshots : [],
     disputes: Array.isArray(parsed.disputes) ? parsed.disputes : [],
-    reviewerNotes: Array.isArray(parsed.reviewerNotes) ? parsed.reviewerNotes : [],
     auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [],
-    attestations: Array.isArray(parsed.attestations) ? parsed.attestations : [],
+    attestations: Array.isArray(parsed.attestations)
+      ? parsed.attestations.map((entry) => {
+          const attestation = entry as PersistedDatabase["attestations"][number] & {
+            attestationStatus?: "demo" | "signed" | "anchored";
+          };
+
+          return {
+            ...attestation,
+            attestationStatus: attestation.attestationStatus ?? "demo",
+          };
+        })
+      : [],
   };
 }
 

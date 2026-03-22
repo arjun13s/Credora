@@ -1,5 +1,6 @@
 import { logProfileAccess } from "@/lib/store";
 import { jsonError } from "@/lib/http";
+import type { AuditLog } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export async function POST(
   try {
     const { profileId } = await params;
     const payload = (await request.json()) as {
-      actor?: "applicant" | "reviewer" | "system";
+      actor?: AuditLog["actor"];
       action?: string;
       detail?: string;
     };

@@ -2,94 +2,42 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 
-import { demoScenarios, getDefaultApplicantProfileInput } from "@/lib/demo-scenarios";
+import { Logo } from "@/components/logo";
+import {
+  createEmptyApplicantProfileInput,
+  getApplicantProfileSectionCompleteness,
+  isApplicantProfileSubmitReady,
+} from "@/lib/profile-defaults";
 import type { ApplicantProfileInput, ApplicantProfileView } from "@/lib/types";
 
 type SubmitPhase = "idle" | "saving" | "creating" | "grading";
 
-const initialInput = getDefaultApplicantProfileInput();
+const initialInput = createEmptyApplicantProfileInput();
 
-function percentage(complete: number, total: number) {
-  return Math.round((complete / total) * 100);
+function numericDisplay(value: number): string {
+  return String(value);
 }
 
-export function ApplicantProfileForm({
-  seededProfileId,
-  seededShareToken,
-}: {
-  seededProfileId?: string;
-  seededShareToken?: string;
-}) {
+function parseNumeric(raw: string, fallback: number): number {
+  if (raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+export function ApplicantProfileForm() {
   const router = useRouter();
   const [form, setForm] = useState<ApplicantProfileInput>(initialInput);
   const [issues, setIssues] = useState<Record<string, string>>({});
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>("idle");
   const [statusMessage, setStatusMessage] = useState(
-    "Credora keeps this housing application profile private by default and only shares it when you choose to.",
+    "Complete every required section to 100% before submitting. Credora keeps the profile private until you choose to publish a public snapshot later.",
   );
   const [isPending, startTransition] = useTransition();
 
-  const completeness = useMemo(() => {
-    const personalFields = [
-      form.personalInformation.fullName,
-      form.personalInformation.email,
-      form.personalInformation.phone,
-      form.personalInformation.city,
-      form.personalInformation.state,
-      form.personalInformation.targetRent > 0 ? "ok" : "",
-    ].filter(Boolean).length;
-
-    const identityFields = [
-      form.identityVerification.identityMethod,
-      form.identityVerification.identityVerified ? "verified" : "",
-      form.identityVerification.governmentIdFileNames.length > 0 ? "file" : "",
-    ].filter(Boolean).length;
-
-    const incomeFields = [
-      form.employmentIncome.employmentStatus,
-      form.employmentIncome.monthlyIncome > 0 ? "income" : "",
-      form.employmentIncome.incomeType,
-      form.employmentIncome.payFrequency,
-      form.employmentIncome.payStubFileNames.length > 0 ||
-      form.employmentIncome.contractDocumentFileNames.length > 0
-        ? "doc"
-        : "",
-    ].filter(Boolean).length;
-
-    const housingFields = [
-      form.housingHistory.currentRent > 0 ? "rent" : "",
-      form.housingHistory.monthsAtResidence > 0 ? "months" : "",
-      form.housingHistory.leaseFileNames.length > 0 ||
-      form.housingHistory.rentLedgerFileNames.length > 0 ||
-      form.housingHistory.receiptsFileNames.length > 0
-        ? "housing"
-        : "",
-    ].filter(Boolean).length;
-
-    const financialFields = [
-      form.financialStability.bankConnected ? "bank" : "",
-      form.financialStability.averageBalanceCushion > 0 ? "cushion" : "",
-      form.financialStability.signalRecencyDays > 0 ? "recency" : "",
-    ].filter(Boolean).length;
-
-    const consentFields = [
-      form.consents.identity_check,
-      form.consents.profile_share,
-      form.consents.consentToSubmit,
-      form.consents.retentionAcknowledged,
-    ].filter(Boolean).length;
-
-    return {
-      personal: percentage(personalFields, 6),
-      identity: percentage(identityFields, 3),
-      income: percentage(incomeFields, 5),
-      housing: percentage(housingFields, 3),
-      financial: percentage(financialFields, 3),
-      consent: percentage(consentFields, 4),
-    };
-  }, [form]);
+  const completeness = getApplicantProfileSectionCompleteness(form);
+  const allSectionsComplete = isApplicantProfileSubmitReady(form);
 
   function updateNested<K extends keyof ApplicantProfileInput, N extends keyof ApplicantProfileInput[K]>(
     section: K,
@@ -128,19 +76,12 @@ export function ApplicantProfileForm({
     });
   }
 
-  function applyScenario(key: string) {
-    const scenario = demoScenarios.find((entry) => entry.key === key);
-
-    if (!scenario) {
+  async function submitProfile() {
+    if (!allSectionsComplete) {
+      setStatusMessage("Every required section must be 100% complete before you can submit.");
       return;
     }
 
-    setForm(structuredClone(scenario.input));
-    setIssues({});
-    setStatusMessage(scenario.description);
-  }
-
-  async function submitProfile() {
     setIssues({});
     setSubmitPhase("saving");
     setStatusMessage("Saving application details...");
@@ -191,26 +132,30 @@ export function ApplicantProfileForm({
           : "Grading profile";
 
   return (
-    <div className="page-shell">
-      <section className="page-hero">
-        <div className="stack-md">
-          <span className="eyebrow">Applicant Profile</span>
-          <h1>Build one housing application profile that explains your reliability clearly.</h1>
+    <>
+      <header className="site-header">
+        <div className="site-header-inner">
+          <Link className="brand" href="/">
+            <Logo size={32} />
+            <span>Credora</span>
+          </Link>
+          <nav className="site-nav">
+            <Link href="/">Home</Link>
+            <Link href="/blockchain-technology">Blockchain technology</Link>
+            <Link href="/review">Published Snapshots</Link>
+          </nav>
+        </div>
+      </header>
+
+      <div className="page-shell">
+        <section className="page-hero">
+          <div className="stack-md">
+            <span className="eyebrow">Applicant Profile</span>
+            <h1>Build one housing application profile that explains your reliability clearly.</h1>
           <p className="lede">
-            Credora helps you submit your information once, turn it into a
-            housing-specific trust profile, and understand exactly how your
-            application was assessed.
+            Submit one housing application profile, review the result privately,
+            then choose whether to publish a public version.
           </p>
-          <div className="button-row">
-            {seededProfileId && seededShareToken ? (
-              <Link
-                className="button button--secondary"
-                href={`/profiles/${seededProfileId}/reviewer?token=${seededShareToken}`}
-              >
-                Open reviewer demo
-              </Link>
-            ) : null}
-          </div>
         </div>
         <div className="hero-callout stack-md">
           <div className="subtle-panel stack-sm">
@@ -218,7 +163,7 @@ export function ApplicantProfileForm({
             <ul className="list">
               <li>A housing-specific reliability assessment</li>
               <li>Explainable and confidence-aware</li>
-              <li>Visible to the applicant before sharing</li>
+              <li>Visible to the applicant before any publication</li>
             </ul>
           </div>
           <div className="subtle-panel stack-sm">
@@ -234,29 +179,6 @@ export function ApplicantProfileForm({
 
       <section className="section-grid">
         <div className="section-main stack-lg">
-          <article className="card stack-md">
-            <div className="row row--space-start row--top">
-              <div className="stack-xs">
-                <span className="eyebrow eyebrow--subtle">Demo quick-fill</span>
-                <h2>Start from a realistic scenario</h2>
-              </div>
-              <span className="chip chip--outline">Optional</span>
-            </div>
-            <div className="option-grid">
-              {demoScenarios.map((scenario) => (
-                <button
-                  key={scenario.key}
-                  className="option-card"
-                  onClick={() => applyScenario(scenario.key)}
-                  type="button"
-                >
-                  <span className="mini-label">{scenario.label}</span>
-                  <p>{scenario.description}</p>
-                </button>
-              ))}
-            </div>
-          </article>
-
           <article className="card stack-md">
             <div className="row row--space-start">
               <div className="stack-xs">
@@ -318,39 +240,14 @@ export function ApplicantProfileForm({
               <label className="field">
                 <span>Target rent</span>
                 <input
-                  type="number"
-                  min={0}
-                  step={50}
-                  value={form.personalInformation.targetRent}
+                  type="text"
+                  inputMode="numeric"
+                  value={numericDisplay(form.personalInformation.targetRent)}
                   onChange={(event) =>
                     updateNested(
                       "personalInformation",
                       "targetRent",
-                      Number(event.target.value),
-                    )
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>Date of birth</span>
-                <input
-                  type="date"
-                  value={form.personalInformation.dateOfBirth ?? ""}
-                  onChange={(event) =>
-                    updateNested("personalInformation", "dateOfBirth", event.target.value)
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>Preferred move-in date</span>
-                <input
-                  type="date"
-                  value={form.personalInformation.preferredMoveInDate ?? ""}
-                  onChange={(event) =>
-                    updateNested(
-                      "personalInformation",
-                      "preferredMoveInDate",
-                      event.target.value,
+                      parseNumeric(event.target.value, 0),
                     )
                   }
                 />
@@ -390,6 +287,7 @@ export function ApplicantProfileForm({
               <label className="field field--wide">
                 <span>Identity documents</span>
                 <input
+                  accept="image/*,.pdf"
                   multiple
                   type="file"
                   onChange={(event) =>
@@ -400,42 +298,7 @@ export function ApplicantProfileForm({
                     )
                   }
                 />
-              </label>
-            </div>
-            <div className="toggle-grid">
-              <label className="toggle-card">
-                <input
-                  checked={form.identityVerification.identityVerified}
-                  onChange={(event) =>
-                    updateNested(
-                      "identityVerification",
-                      "identityVerified",
-                      event.target.checked,
-                    )
-                  }
-                  type="checkbox"
-                />
-                <div>
-                  <strong>Identity looks verified</strong>
-                  <p>Use this to simulate a successful identity check in the MVP.</p>
-                </div>
-              </label>
-              <label className="toggle-card">
-                <input
-                  checked={form.identityVerification.accountOwnerMatch}
-                  onChange={(event) =>
-                    updateNested(
-                      "identityVerification",
-                      "accountOwnerMatch",
-                      event.target.checked,
-                    )
-                  }
-                  type="checkbox"
-                />
-                <div>
-                  <strong>Connected bank account matches identity</strong>
-                  <p>This helps catch mismatches and creates a stronger confidence signal.</p>
-                </div>
+                <small>Required. Upload an image or document for identity verification.</small>
               </label>
             </div>
           </article>
@@ -482,15 +345,14 @@ export function ApplicantProfileForm({
               <label className="field">
                 <span>Monthly income estimate</span>
                 <input
-                  type="number"
-                  min={0}
-                  step={50}
-                  value={form.employmentIncome.monthlyIncome}
+                  type="text"
+                  inputMode="numeric"
+                  value={numericDisplay(form.employmentIncome.monthlyIncome)}
                   onChange={(event) =>
                     updateNested(
                       "employmentIncome",
                       "monthlyIncome",
-                      Number(event.target.value),
+                      parseNumeric(event.target.value, 0),
                     )
                   }
                 />
@@ -561,26 +423,25 @@ export function ApplicantProfileForm({
               <label className="field">
                 <span>Current rent</span>
                 <input
-                  type="number"
-                  min={0}
-                  step={50}
-                  value={form.housingHistory.currentRent}
+                  type="text"
+                  inputMode="numeric"
+                  value={numericDisplay(form.housingHistory.currentRent)}
                   onChange={(event) =>
-                    updateNested("housingHistory", "currentRent", Number(event.target.value))
+                    updateNested("housingHistory", "currentRent", parseNumeric(event.target.value, 0))
                   }
                 />
               </label>
               <label className="field">
                 <span>Months at current residence</span>
                 <input
-                  type="number"
-                  min={0}
-                  value={form.housingHistory.monthsAtResidence}
+                  type="text"
+                  inputMode="numeric"
+                  value={numericDisplay(form.housingHistory.monthsAtResidence)}
                   onChange={(event) =>
                     updateNested(
                       "housingHistory",
                       "monthsAtResidence",
-                      Number(event.target.value),
+                      parseNumeric(event.target.value, 0),
                     )
                   }
                 />
@@ -588,14 +449,14 @@ export function ApplicantProfileForm({
               <label className="field">
                 <span>Rent continuity (months)</span>
                 <input
-                  type="number"
-                  min={0}
-                  value={form.housingHistory.rentPaymentStreakMonths}
+                  type="text"
+                  inputMode="numeric"
+                  value={numericDisplay(form.housingHistory.rentPaymentStreakMonths)}
                   onChange={(event) =>
                     updateNested(
                       "housingHistory",
                       "rentPaymentStreakMonths",
-                      Number(event.target.value),
+                      parseNumeric(event.target.value, 0),
                     )
                   }
                 />
@@ -603,14 +464,14 @@ export function ApplicantProfileForm({
               <label className="field">
                 <span>Utility continuity (months)</span>
                 <input
-                  type="number"
-                  min={0}
-                  value={form.housingHistory.utilityPaymentStreakMonths}
+                  type="text"
+                  inputMode="numeric"
+                  value={numericDisplay(form.housingHistory.utilityPaymentStreakMonths)}
                   onChange={(event) =>
                     updateNested(
                       "housingHistory",
                       "utilityPaymentStreakMonths",
-                      Number(event.target.value),
+                      parseNumeric(event.target.value, 0),
                     )
                   }
                 />
@@ -645,7 +506,7 @@ export function ApplicantProfileForm({
             <div className="row row--space-start">
               <div className="stack-xs">
                 <span className="eyebrow eyebrow--subtle">Financial Stability</span>
-                <h2>Add optional banking and stability context</h2>
+                <h2>Add banking and stability context</h2>
               </div>
               <span className="chip chip--outline">{completeness.financial}% complete</span>
             </div>
@@ -655,28 +516,29 @@ export function ApplicantProfileForm({
                 type="button"
                 onClick={() => {
                   updateNested("financialStability", "bankConnected", true);
+                  updateNested("financialStability", "recurringBillsTracked", true);
                   updateNested("consents", "bank_connection", true);
                   setStatusMessage(
-                    "Sandbox bank connection enabled. Reviewers will see only derived cash-flow signals, not raw transactions.",
+                    "Bank connection enabled. Credora uses only derived cash-flow signals, not raw transactions.",
                   );
                 }}
               >
-                Simulate Plaid-style connection
+                Connect bank
               </button>
+              <small>Required.</small>
             </div>
             <div className="form-grid">
               <label className="field">
                 <span>Average balance cushion</span>
                 <input
-                  type="number"
-                  min={0}
-                  step={50}
-                  value={form.financialStability.averageBalanceCushion}
+                  type="text"
+                  inputMode="numeric"
+                  value={numericDisplay(form.financialStability.averageBalanceCushion)}
                   onChange={(event) =>
                     updateNested(
                       "financialStability",
                       "averageBalanceCushion",
-                      Number(event.target.value),
+                      parseNumeric(event.target.value, 0),
                     )
                   }
                 />
@@ -684,14 +546,14 @@ export function ApplicantProfileForm({
               <label className="field">
                 <span>Overdrafts in last 90 days</span>
                 <input
-                  type="number"
-                  min={0}
-                  value={form.financialStability.overdraftsLast90Days}
+                  type="text"
+                  inputMode="numeric"
+                  value={numericDisplay(form.financialStability.overdraftsLast90Days)}
                   onChange={(event) =>
                     updateNested(
                       "financialStability",
                       "overdraftsLast90Days",
-                      Number(event.target.value),
+                      parseNumeric(event.target.value, 0),
                     )
                   }
                 />
@@ -699,14 +561,14 @@ export function ApplicantProfileForm({
               <label className="field">
                 <span>Most recent signal age (days)</span>
                 <input
-                  type="number"
-                  min={1}
-                  value={form.financialStability.signalRecencyDays}
+                  type="text"
+                  inputMode="numeric"
+                  value={numericDisplay(form.financialStability.signalRecencyDays)}
                   onChange={(event) =>
                     updateNested(
                       "financialStability",
                       "signalRecencyDays",
-                      Number(event.target.value),
+                      parseNumeric(event.target.value, 1),
                     )
                   }
                 />
@@ -731,17 +593,10 @@ export function ApplicantProfileForm({
                   setFileNames("supportingDocuments", "additionalFileNames", event.target.files)
                 }
               />
-              <small>Use this for extra receipts, letters, or supporting context that helps a human reviewer understand the application.</small>
-            </label>
-            <label className="field">
-              <span>Applicant notes</span>
-              <textarea
-                rows={4}
-                value={form.supportingDocuments.applicantNotes}
-                onChange={(event) =>
-                  updateNested("supportingDocuments", "applicantNotes", event.target.value)
-                }
-              />
+              <small>
+                Use this for extra receipts, letters, or supporting context that can strengthen
+                the scored profile before you decide whether to publish it.
+              </small>
             </label>
           </article>
 
@@ -760,7 +615,6 @@ export function ApplicantProfileForm({
                   ["bank_connection", "Use connected cash-flow signals for housing review."],
                   ["income_docs", "Use income-supporting documents for grading."],
                   ["housing_docs", "Use housing documents and receipts for grading."],
-                  ["profile_share", "Allow a private, revocable reviewer link to be generated."],
                 ] as const
               ).map(([key, description]) => (
                 <label key={key} className="toggle-card">
@@ -804,7 +658,7 @@ export function ApplicantProfileForm({
                 />
                 <div>
                   <strong>I understand the retention window</strong>
-                  <p>Required. Shared profile access is time-bounded and revocable.</p>
+                  <p>Required. If I later publish a public snapshot, that public version cannot be undone.</p>
                 </div>
               </label>
             </div>
@@ -822,17 +676,25 @@ export function ApplicantProfileForm({
               <li>Your application data is saved.</li>
               <li>A private Applicant Profile is created.</li>
               <li>Credora reviews the information you choose to share and generates a housing-specific profile.</li>
-              <li>You review the results before sharing them.</li>
+              <li>You review the results privately before deciding whether to publish a permanent public snapshot.</li>
             </ul>
             <div className="subtle-panel stack-sm">
               <span className="mini-label">Current submit phase</span>
               <strong>{phaseLabel}</strong>
             </div>
             <div className="subtle-panel stack-sm">
-              <span className="mini-label">Section completeness</span>
-              <ul className="list">
-                <li>Personal information: {completeness.personal}%</li>
-                <li>Identity verification: {completeness.identity}%</li>
+              <span className="mini-label">Submit requirement</span>
+              <strong>
+                {allSectionsComplete
+                  ? "All required sections are complete."
+                  : "Every required section must reach 100% before submit unlocks."}
+              </strong>
+            </div>
+            <div className="subtle-panel stack-sm">
+                <span className="mini-label">Section completeness</span>
+                <ul className="list">
+                  <li>Personal information: {completeness.personal}%</li>
+                  <li>Identity verification: {completeness.identity}%</li>
                 <li>Employment / income: {completeness.income}%</li>
                 <li>Housing history: {completeness.housing}%</li>
                 <li>Financial stability: {completeness.financial}%</li>
@@ -841,9 +703,14 @@ export function ApplicantProfileForm({
             </div>
             <button
               className="button button--primary"
-              disabled={isPending}
+              disabled={isPending || !allSectionsComplete}
               onClick={() => startTransition(() => void submitProfile())}
               type="button"
+              title={
+                allSectionsComplete
+                  ? "Submit Applicant Profile"
+                  : "Complete every required section to 100% before submitting"
+              }
             >
               {isPending ? "Submitting..." : "Submit Applicant Profile"}
             </button>
@@ -851,5 +718,6 @@ export function ApplicantProfileForm({
         </aside>
       </section>
     </div>
+    </>
   );
 }

@@ -1,8 +1,8 @@
 import type {
   ConfidenceBand,
+  PublicationStatus,
   ProfileStatus,
   RecommendationStatus,
-  ShareStatus,
   TrustBand,
 } from "@/lib/types";
 
@@ -11,10 +11,7 @@ type PillTone =
   | ConfidenceBand
   | RecommendationStatus
   | ProfileStatus
-  | ShareStatus
-  | "Manual review advised"
-  | "Need more documents"
-  | "Proceed carefully"
+  | PublicationStatus
   | "Verified"
   | "Self reported"
   | "Missing";
@@ -24,12 +21,12 @@ function toneClass(tone: PillTone) {
     case "Strong":
     case "High":
     case "Verified":
+    case "published":
       return "pill pill--positive";
     case "Moderate":
     case "Medium":
     case "Self reported":
     case "Recommended":
-    case "Proceed carefully":
       return "pill pill--balanced";
     case "Weak":
     case "Low":
@@ -44,11 +41,7 @@ function toneClass(tone: PillTone) {
     case "grading":
     case "needs_review":
     case "complete":
-    case "Need more documents":
-    case "Manual review advised":
-    case "shareable":
     case "private":
-    case "revoked":
       return "pill pill--neutral";
     case "Unknown":
     default:

@@ -1,5 +1,6 @@
 import type { ApplicantProfileInput } from "@/lib/types";
 import type { RecursivePartial } from "@/lib/api-contracts";
+import { getApplicantProfileSectionChecks } from "@/lib/profile-defaults";
 
 export interface ValidationIssue {
   field: string;
@@ -11,10 +12,10 @@ export function validateApplicantProfileInput(
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const personal = input.personalInformation;
-  const identity = input.identityVerification;
   const employment = input.employmentIncome;
   const housing = input.housingHistory;
   const consents = input.consents;
+  const checks = getApplicantProfileSectionChecks(input);
 
   if (!personal.fullName.trim()) {
     issues.push({ field: "personalInformation.fullName", message: "Full name is required." });
@@ -40,10 +41,17 @@ export function validateApplicantProfileInput(
     issues.push({ field: "personalInformation.targetRent", message: "Target rent must be greater than zero." });
   }
 
-  if (!identity.identityMethod) {
+  if (!checks.identity[0]) {
     issues.push({
       field: "identityVerification.identityMethod",
       message: "Choose at least one identity verification method.",
+    });
+  }
+
+  if (!checks.identity[1]) {
+    issues.push({
+      field: "identityVerification.governmentIdFileNames",
+      message: "Upload at least one identity document image or file.",
     });
   }
 
@@ -68,10 +76,94 @@ export function validateApplicantProfileInput(
     });
   }
 
+  if (!employment.employerName.trim()) {
+    issues.push({
+      field: "employmentIncome.employerName",
+      message: "Employer or platform name is required.",
+    });
+  }
+
+  if (!employment.payFrequency) {
+    issues.push({
+      field: "employmentIncome.payFrequency",
+      message: "Pay frequency is required.",
+    });
+  }
+
+  if (!checks.income[5]) {
+    issues.push({
+      field: "employmentIncome.payStubFileNames",
+      message: "Upload at least one income-supporting document.",
+    });
+  }
+
   if (housing.currentRent <= 0) {
     issues.push({
       field: "housingHistory.currentRent",
       message: "Current rent must be greater than zero.",
+    });
+  }
+
+  if (housing.monthsAtResidence <= 0) {
+    issues.push({
+      field: "housingHistory.monthsAtResidence",
+      message: "Months at current residence must be greater than zero.",
+    });
+  }
+
+  if (housing.rentPaymentStreakMonths <= 0) {
+    issues.push({
+      field: "housingHistory.rentPaymentStreakMonths",
+      message: "Rent continuity must be greater than zero months.",
+    });
+  }
+
+  if (housing.utilityPaymentStreakMonths <= 0) {
+    issues.push({
+      field: "housingHistory.utilityPaymentStreakMonths",
+      message: "Utility continuity must be greater than zero months.",
+    });
+  }
+
+  if (!checks.housing[4]) {
+    issues.push({
+      field: "housingHistory.leaseFileNames",
+      message: "Upload at least one housing document.",
+    });
+  }
+
+  if (!housing.landlordReferenceName.trim()) {
+    issues.push({
+      field: "housingHistory.landlordReferenceName",
+      message: "Landlord reference name is required.",
+    });
+  }
+
+  if (!checks.financial[0]) {
+    issues.push({
+      field: "financialStability.bankConnected",
+      message: "Connect a bank account before submitting.",
+    });
+  }
+
+  if (!checks.financial[1]) {
+    issues.push({
+      field: "financialStability.averageBalanceCushion",
+      message: "Average balance cushion must be greater than zero.",
+    });
+  }
+
+  if (!checks.financial[2]) {
+    issues.push({
+      field: "financialStability.signalRecencyDays",
+      message: "Most recent signal age must be greater than zero.",
+    });
+  }
+
+  if (!checks.consent[0] || !checks.consent[1] || !checks.consent[2] || !checks.consent[3]) {
+    issues.push({
+      field: "consents",
+      message: "All required evidence consents must be enabled.",
     });
   }
 
@@ -86,13 +178,6 @@ export function validateApplicantProfileInput(
     issues.push({
       field: "consents.retentionAcknowledged",
       message: "Retention acknowledgement is required.",
-    });
-  }
-
-  if (!consents.profile_share) {
-    issues.push({
-      field: "consents.profile_share",
-      message: "Profile sharing consent is required to generate a shareable housing profile.",
     });
   }
 
@@ -132,7 +217,6 @@ export function isApplicantProfileInput(
     typeof candidate.financialStability?.overdraftsLast90Days === "number" &&
     typeof candidate.financialStability?.signalRecencyDays === "number" &&
     Array.isArray(candidate.supportingDocuments?.additionalFileNames) &&
-    typeof candidate.supportingDocuments?.applicantNotes === "string" &&
     typeof candidate.consents?.consentToSubmit === "boolean" &&
     typeof candidate.consents?.retentionAcknowledged === "boolean"
   );

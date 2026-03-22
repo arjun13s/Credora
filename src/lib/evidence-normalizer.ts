@@ -43,9 +43,6 @@ function consentedSources(input: ApplicantProfileInput) {
   if (consents.housing_docs) {
     allowed.add("housing_docs");
   }
-  if (consents.profile_share) {
-    allowed.add("profile_share");
-  }
 
   return allowed;
 }
@@ -352,7 +349,6 @@ export function buildNormalizedEvidenceBundle(
       identityVerified,
       accountOwnerMatch: input.identityVerification.accountOwnerMatch,
       governmentIdDocumentCount: identityDocumentCount,
-      selfiePlanned: input.identityVerification.selfiePlanned,
       provenance: buildProvenance(
         identityVerified ? "verified" : "self_reported",
         identityVerified ? "uploaded_document" : "applicant_form",
