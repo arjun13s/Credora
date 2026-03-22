@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
-import type { UserRole } from "@/lib/users";
+
+export type UserRole = "applicant" | "reviewer";
 
 export async function requireAuth() {
   const session = await auth();
@@ -17,7 +18,10 @@ export async function requireRole(requiredRole: UserRole) {
       error: Response.json({ error: "Unauthorized" }, { status: 401 }),
     };
   }
-  if ((session.user as any).role !== requiredRole) {
+
+  const role = (session.user as any)?.role as string | undefined;
+
+  if (role !== requiredRole) {
     return {
       session,
       error: Response.json({ error: "Forbidden" }, { status: 403 }),

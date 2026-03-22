@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@auth0/nextjs-auth0": "^4.16.0",
+    "@types/bcryptjs": "^2.4.6",
     "bcryptjs": "^3.0.3",
     "next": "16.2.1",
     "next-auth": "^5.0.0-beta.30",
@@ -19,7 +21,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

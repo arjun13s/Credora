@@ -16,6 +16,9 @@ const MOCKUP_CATEGORIES = [
 export default async function HomePage() {
   const session = await auth();
   const isLoggedIn = !!session;
+  const role = (session?.user as any)?.role as string | undefined;
+  const isApplicant = role === "applicant";
+  const isReviewer = role === "reviewer";
 
   return (
     <>
@@ -27,21 +30,16 @@ export default async function HomePage() {
             <span>Credora</span>
           </Link>
           <nav className="site-nav">
-            {isLoggedIn && (session?.user as any)?.role === "applicant" && (
+            {isLoggedIn && isApplicant && (
               <Link href="/applicant">My profile</Link>
             )}
-            {isLoggedIn && (session?.user as any)?.role === "reviewer" && (
+            {isLoggedIn && isReviewer && (
               <Link href="/review">Reviewer Portal</Link>
             )}
           </nav>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             {isLoggedIn && (
-              <form
-                action={async () => {
-                  "use server";
-                  await signOut({ redirectTo: "/" });
-                }}
-              >
+              <form action={async () => { "use server"; await signOut({ redirectTo: "/" }); }}>
                 <button type="submit" className="button button--ghost" style={{ height: "36px", padding: "0 1rem" }}>
                   Sign out ({session.user?.name})
                 </button>
@@ -67,7 +65,7 @@ export default async function HomePage() {
 
               {isLoggedIn ? (
                 <div className="button-row" style={{ marginTop: "2rem" }}>
-                  {(session?.user as any)?.role === "applicant" ? (
+                  {isApplicant ? (
                     <Link className="button button--primary" href="/applicant">
                       Go to my profile
                     </Link>
@@ -283,7 +281,7 @@ export default async function HomePage() {
           <p>Complete your profile efficiently. Our specialists review every application to ensure precision and fairness—without automated denials.</p>
           <div className="button-row" style={{ justifyContent: "center" }}>
             {isLoggedIn ? (
-              (session?.user as any)?.role === "applicant" ? (
+              isApplicant ? (
                 <Link className="button button--white" href="/applicant">
                   Go to my profile
                 </Link>
@@ -293,14 +291,9 @@ export default async function HomePage() {
                 </Link>
               )
             ) : (
-              <>
-                <Link className="button button--white" href="/login?role=applicant">
-                  Sign in as Applicant
-                </Link>
-                <Link className="button button--white-outline" href="/login?role=reviewer">
-                  Sign in as Reviewer
-                </Link>
-              </>
+              <Link className="button button--white" href="/login">
+                Sign in to get started
+              </Link>
             )}
           </div>
         </div>

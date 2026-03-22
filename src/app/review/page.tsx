@@ -26,12 +26,7 @@ export default async function ReviewerDashboardPage() {
           </nav>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             {isLoggedIn ? (
-              <form
-                action={async () => {
-                  "use server";
-                  await signOut({ redirectTo: "/" });
-                }}
-              >
+              <form action={async () => { "use server"; await signOut({ redirectTo: "/" }); }}>
                 <button type="submit" className="button button--ghost" style={{ height: "36px", padding: "0 1rem" }}>
                   Sign out ({session.user?.name})
                 </button>

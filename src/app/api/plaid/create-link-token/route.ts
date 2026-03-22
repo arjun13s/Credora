@@ -11,7 +11,7 @@ export async function POST() {
   }
 
   const configs = {
-    user: { client_user_id: session.user?.id || "credora-demo-user" },
+    user: { client_user_id: (session.user?.sub as string) || "credora-demo-user" },
     client_name: "Credora",
     products: [Products.Auth, Products.Transactions],
     country_codes: [CountryCode.Us],
