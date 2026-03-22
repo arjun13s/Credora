@@ -1,71 +1,69 @@
-# Credora
+# 🏠 Credora
 
-> **Housing trust, built from evidence. Not just a credit score.**
+Housing trust built from evidence, not just a credit score.
 
-Credora gives thin-file renters a way to actually prove they're reliable. Fill out a structured profile, get a transparent score broken down by category, and — when you're ready — publish an immutable public snapshot that lives forever. No black boxes. No automated rejections. No vibes-based landlord decisions.
-
----
-
-## What it does
-
-Traditional credit scores miss the full picture. Credora builds a housing-specific reliability profile from real evidence:
-
-- **Payment consistency** — rent streaks, utility payments, no missed months
-- **Income regularity** — stable deposits, pay stubs, employment duration
-- **Housing history** — previous tenancies, references, time at address
-- **Balance stability** — savings behavior, cash flow patterns
-
-Each category gets its own score + rationale. Missing evidence is flagged separately from actual risk — so "we don't have your bank statements" doesn't count the same as "you missed three payments."
+Credora lets renters build a structured reliability profile from real evidence: rent history, income docs, bank signals, identity verification. Each category is scored separately with a clear rationale. Applicants control when their profile goes public.
 
 ---
 
-## The flow
+## How it works
 
 ```
-Applicant fills form  →  Credora scores it  →  Private results first
-                                                      ↓
-                                          Applicant chooses to publish
-                                                      ↓
-                                          Immutable public snapshot
-                                          (reviewers can see it anytime)
+Applicant fills form
+    → Credora scores it
+    → Applicant reviews private results
+    → Applicant chooses to publish
+    → Immutable public snapshot (reviewers can see it anytime)
 ```
 
-Publishing is **intentional and one-way** per snapshot:
-- once published, a snapshot can't be edited
-- a new publish creates a linked next version
-- old versions stay visible as a permanent record
+Publishing is one-way per snapshot. Once published it cannot be edited. A new publish creates a linked next version and old ones stay visible.
+
+---
+
+## Scoring
+
+Six categories, each 0-100, fully deterministic:
+
+| Category | Weight |
+|---|---|
+| Identity confidence | 15% |
+| Housing history | 25% |
+| Income stability | 20% |
+| Payment consistency | 20% |
+| Financial stability | 10% |
+| Completeness / recency | 10% |
+
+Missing evidence is flagged separately from actual risk. "No bank statements" is not the same as "missed three payments."
+
+Outputs: `Recommended`, `Needs manual review`, `Potential inconsistency detected`, or `Insufficient evidence`.
 
 ---
 
 ## Pages
 
-| Route | What's there |
+| Route | What |
 |---|---|
-| `/` | Landing — hero, how it works, feature grid |
-| `/applicant-profile` | Intake form — submit once, score everything |
-| `/profiles/[profileId]` | Private results — applicant-only, full breakdown |
-| `/review` | Public directory — tile grid of published snapshots |
-| `/published/[snapshotId]` | Immutable public profile — shareable, permanent |
-| `/blockchain-technology` | How attestations and hashing work |
-
-Legacy routes (`/applicant`, `/profile/[id]`, `/review/[id]`) redirect automatically.
+| `/` | Landing page |
+| `/applicant-profile` | Intake form |
+| `/profiles/[profileId]` | Private results, dispute, publish |
+| `/review` | Public snapshot directory |
+| `/published/[snapshotId]` | Immutable public profile |
+| `/blockchain-technology` | Attestation and hashing explainer |
 
 ---
 
 ## API
 
-### Core
-
+**Profiles**
 ```
-POST /api/profiles                        create + submit in one shot
-GET  /api/profiles/[profileId]            fetch full profile
-POST /api/profiles/[profileId]/publish    publish immutable snapshot
-POST /api/profiles/[profileId]/disputes   open a dispute
-POST /api/profiles/[profileId]/access     append audit log event
+POST   /api/profiles
+GET    /api/profiles/[profileId]
+POST   /api/profiles/[profileId]/publish
+POST   /api/profiles/[profileId]/disputes
+POST   /api/profiles/[profileId]/access
 ```
 
-### Draft flow (for incremental frontends)
-
+**Drafts**
 ```
 POST   /api/profiles/drafts
 GET    /api/profiles/[profileId]/draft
@@ -76,70 +74,23 @@ GET    /api/profiles/[profileId]/evaluation
 GET    /api/profiles/summaries
 ```
 
-> `POST/DELETE /api/profiles/[profileId]/share-links` → `410 Gone` (deprecated)
-
----
-
-## Architecture
-
-### The scoring pipeline
-
-```
-applicant input
-    → evidence-normalizer.ts   (structure raw input into typed evidence)
-    → rubric.ts                (deterministic category scores + confidence)
-    → evaluator-client.ts      (optional external evaluator, with fallback)
-    → evaluator-validator.ts   (validate external responses)
-    → hud-contract.ts          (HUD-facing payload, band mapping, recommendations)
-    → store.ts                 (persist everything, handle publish/dispute/audit)
-```
-
-### Key files
-
-| File | Does what |
-|---|---|
-| `src/lib/store.ts` | The brain — profile lifecycle, snapshots, disputes, audit logs |
-| `src/lib/rubric.ts` | Deterministic scoring — no LLM, no randomness |
-| `src/lib/evaluator-client.ts` | Calls external evaluator if configured, falls back gracefully |
-| `src/lib/hud-contract.ts` | HUD translation layer — recommendation payloads, band mapping |
-| `src/lib/persistence.ts` | Local JSON storage at `.data/credora-db.json` |
-| `src/lib/attestations.ts` | Blockchain hook — currently no-op, ready for real anchoring |
-
-### Blockchain posture
-
-Intentionally lightweight for now:
-- every published snapshot gets a stable **payload hash**
-- a demo attestation record is stored alongside it
-- **no raw applicant data goes on-chain** — only the hash
-- future anchoring plugs into `attestations.ts` using the snapshot hash
-
 ---
 
 ## Evaluator modes
 
-No LLMs run in this repo. The evaluator is a swappable boundary:
-
 ```bash
-CREDORA_EVALUATOR_MODE=local_mock        # default, good for dev
+CREDORA_EVALUATOR_MODE=local_mock         # default
 CREDORA_EVALUATOR_MODE=deterministic_only # rubric only, no external calls
-CREDORA_EVALUATOR_MODE=hud_remote        # calls a real external service
+CREDORA_EVALUATOR_MODE=hud_remote         # calls external HUD service
 ```
 
-For remote mode:
-```bash
-CREDORA_HUD_EVALUATOR_URL=https://your-hud-service.example.com/evaluate
-```
-
-If the external evaluator is down, the app falls back to the deterministic rubric automatically.
+Falls back to the deterministic rubric if the external evaluator is unavailable.
 
 ---
 
-## UI details
+## Blockchain
 
-- **Light mode by default**, dark mode toggle top-right of every page
-- **No login required** — fully public, no accounts
-- Score rings on the directory page are color-coded: green (≥ 75), amber (≥ 55), red (below 55)
-- Applicants see their full breakdown privately before deciding to publish
+Every published snapshot gets a SHA256 payload hash. Snapshots are version-chained via the previous snapshot hash. No raw applicant data goes on-chain. Real anchoring plugs into `src/lib/attestations.ts`.
 
 ---
 
@@ -147,24 +98,16 @@ If the external evaluator is down, the app falls back to the deterministic rubri
 
 ```bash
 npm install
-npm run dev
-```
-
-Hit `http://localhost:3000`.
-
-```bash
-npm run lint
-npm run build
-npm run eval:cases   # run scoring test cases
+npm run dev        # http://localhost:3000
+npm run eval:cases # run scoring test cases
 ```
 
 ---
 
-## Known limitations
+## Limitations
 
-- **Storage**: local JSON (`.data/credora-db.json`), not Postgres/Supabase yet
-- **Uploads**: filenames only, file contents not stored
-- **Plaid**: simulated bank connection
-- **Identity**: self-asserted in the demo flow
-- **Attestations**: demo hashes only, not real cryptographic signatures
-- **HUD case IDs**: supported in the data model, not assigned by the app yet
+- Storage is local JSON at `.data/credora-db.json`, not Postgres yet
+- File uploads store filenames only
+- Plaid connection is simulated
+- Identity verification is self-asserted
+- Attestations are demo hashes, not real signatures
