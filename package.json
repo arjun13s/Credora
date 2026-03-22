@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "eval:cases": "tsx scripts/run-eval-cases.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
@@ -21,6 +22,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }

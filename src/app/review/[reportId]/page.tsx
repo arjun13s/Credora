@@ -1,21 +1,12 @@
-import { notFound } from "next/navigation";
-
-import { ReviewerPageClient } from "@/components/reviewer-page-client";
-import { getReport } from "@/lib/store";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReviewPage({
+export default async function LegacyReviewRedirect({
   params,
 }: {
   params: Promise<{ reportId: string }>;
 }) {
   const { reportId } = await params;
-  const report = getReport(reportId);
-
-  if (!report) {
-    notFound();
-  }
-
-  return <ReviewerPageClient initialReport={report} />;
+  redirect(`/profiles/${reportId}`);
 }

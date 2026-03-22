@@ -1,14 +1,22 @@
-import type { ConfidenceBand, RecommendationState, TrustBand } from "@/lib/types";
+import type {
+  ConfidenceBand,
+  ProfileStatus,
+  RecommendationStatus,
+  ShareStatus,
+  TrustBand,
+} from "@/lib/types";
 
 type PillTone =
   | TrustBand
   | ConfidenceBand
-  | RecommendationState
-  | "Proceed to manual approval review"
-  | "Continue manual review"
-  | "Needs more information"
+  | RecommendationStatus
+  | ProfileStatus
+  | ShareStatus
+  | "Manual review advised"
+  | "Need more documents"
+  | "Proceed carefully"
   | "Verified"
-  | "User provided"
+  | "Self reported"
   | "Missing";
 
 function toneClass(tone: PillTone) {
@@ -19,19 +27,28 @@ function toneClass(tone: PillTone) {
       return "pill pill--positive";
     case "Moderate":
     case "Medium":
-    case "User provided":
-    case "Recommended for manual approval path":
-    case "Proceed to manual approval review":
+    case "Self reported":
+    case "Recommended":
+    case "Proceed carefully":
       return "pill pill--balanced";
     case "Weak":
     case "Low":
     case "Potential inconsistency detected":
     case "Missing":
+    case "error":
       return "pill pill--caution";
-    case "Insufficient data":
+    case "Insufficient evidence":
     case "Needs manual review":
-    case "Continue manual review":
-    case "Needs more information":
+    case "draft":
+    case "submitted":
+    case "grading":
+    case "needs_review":
+    case "complete":
+    case "Need more documents":
+    case "Manual review advised":
+    case "shareable":
+    case "private":
+    case "revoked":
       return "pill pill--neutral";
     case "Unknown":
     default:

@@ -1,11 +1,15 @@
 import Link from "next/link";
 
-import { listReports } from "@/lib/store";
+import { getSeededScenarioPreview } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
-  const sampleReportId = listReports()[0]?.id ?? "";
+export default async function HomePage() {
+  const seeded = await getSeededScenarioPreview();
+  const reviewerHref =
+    seeded?.profileId && seeded.shareLink
+      ? `/profiles/${seeded.profileId}/reviewer?token=${seeded.shareLink.token}`
+      : "/applicant-profile";
 
   return (
     <div className="marketing-shell">
@@ -15,8 +19,8 @@ export default function HomePage() {
           <span>Credora</span>
         </Link>
         <nav className="site-nav">
-          <Link href="/applicant">Applicant flow</Link>
-          <Link href={`/review/${sampleReportId}`}>Reviewer demo</Link>
+          <Link href="/applicant-profile">Applicant Profile</Link>
+          <Link href={reviewerHref}>Reviewer demo</Link>
         </nav>
       </header>
 
@@ -26,15 +30,15 @@ export default function HomePage() {
             <span className="eyebrow">Housing-first trust infrastructure</span>
             <h1>Proof beyond the credit score.</h1>
             <p className="lede">
-              Credora helps thin-file renters turn consented financial and housing
-              evidence into an explainable profile landlords can review more fairly
-              than a blunt credit score alone.
+              Credora helps renters submit one consent-based Applicant Profile,
+              turn it into a housing-specific trust assessment, and review the
+              results before sharing them with a landlord.
             </p>
             <div className="button-row">
-              <Link className="button button--primary" href="/applicant">
-                Build applicant profile
+              <Link className="button button--primary" href="/applicant-profile">
+                Start Applicant Profile
               </Link>
-              <Link className="button button--secondary" href={`/review/${sampleReportId}`}>
+              <Link className="button button--secondary" href={reviewerHref}>
                 Open reviewer dashboard
               </Link>
             </div>
@@ -63,25 +67,26 @@ export default function HomePage() {
         <section className="feature-grid">
           <article className="card stack-sm">
             <span className="eyebrow eyebrow--subtle">Identity confidence</span>
-            <h2>Verify who is applying</h2>
+            <h2>Build a credible housing application identity block</h2>
             <p className="body-muted">
-              Confirm identity and account-owner match before any reliability signal
-              is shown to a reviewer.
+              Applicants enter their information directly, add verification-ready
+              evidence, and know what will count toward confidence.
             </p>
           </article>
           <article className="card stack-sm">
-            <span className="eyebrow eyebrow--subtle">Payment behavior</span>
-            <h2>Show real payment continuity</h2>
+            <span className="eyebrow eyebrow--subtle">Grading engine</span>
+            <h2>Turn submitted evidence into a transparent applicant profile</h2>
             <p className="body-muted">
-              Use bank-derived cash-flow patterns plus rent evidence to surface
-              housing-relevant behavior.
+              Credora organizes consented evidence into clear categories, produces
+              an explainable result, and stays ready for a future external evaluator.
             </p>
           </article>
           <article className="card stack-sm">
             <span className="eyebrow eyebrow--subtle">Transparency</span>
             <h2>Let applicants see and challenge the result</h2>
             <p className="body-muted">
-              Every negative signal gets a source, a reason, and a dispute path.
+              Every issue gets context, every missing document lowers confidence
+              instead of character, and the applicant can dispute the outcome.
             </p>
           </article>
         </section>
@@ -102,7 +107,7 @@ export default function HomePage() {
             <ul className="list">
               <li>Housing-only framing in the MVP</li>
               <li>No hidden social or behavioral signals</li>
-              <li>No black-box machine learning in the scoring engine</li>
+              <li>No black-box universal person scoring</li>
             </ul>
           </article>
         </section>

@@ -1,13 +1,12 @@
 import { BandPill } from "@/components/band-pill";
-import { formatDate } from "@/lib/format";
 import type { EvidenceItem } from "@/lib/types";
 
-function mapVerificationTone(verification: EvidenceItem["verification"]) {
+function mapVerificationTone(verification: EvidenceItem["verificationState"]) {
   switch (verification) {
     case "verified":
       return "Verified" as const;
-    case "user_provided":
-      return "User provided" as const;
+    case "self_reported":
+      return "Self reported" as const;
     case "missing":
     default:
       return "Missing" as const;
@@ -15,7 +14,7 @@ function mapVerificationTone(verification: EvidenceItem["verification"]) {
 }
 
 export function EvidenceCard({ item }: { item: EvidenceItem }) {
-  const tone = mapVerificationTone(item.verification);
+  const tone = mapVerificationTone(item.verificationState);
 
   return (
     <article className="card stack-sm">
@@ -29,25 +28,17 @@ export function EvidenceCard({ item }: { item: EvidenceItem }) {
       <p className="body-muted">{item.detail}</p>
       <dl className="meta-grid">
         <div>
-          <dt>Source</dt>
-          <dd>{item.source}</dd>
+          <dt>Source type</dt>
+          <dd>{item.sourceType.replaceAll("_", " ")}</dd>
         </div>
         <div>
           <dt>Shared</dt>
           <dd>{item.shareIncluded ? "Included in report" : "Hidden by default"}</dd>
         </div>
-        {item.verifiedAt ? (
-          <div>
-            <dt>Verified</dt>
-            <dd>{formatDate(item.verifiedAt)}</dd>
-          </div>
-        ) : null}
-        {item.expiresAt ? (
-          <div>
-            <dt>Expires</dt>
-            <dd>{formatDate(item.expiresAt)}</dd>
-          </div>
-        ) : null}
+        <div>
+          <dt>Metadata</dt>
+          <dd>{Object.keys(item.metadata).length} detail(s)</dd>
+        </div>
       </dl>
     </article>
   );

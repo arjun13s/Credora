@@ -1,126 +1,938 @@
-import { prisma } from "@/lib/db";
-import { buildProfileSummary } from "@/lib/scoring";
-import { getDefaultApplicantInput } from "@/lib/demo-scenarios";
+import { createHash } from "node:crypto";
+
+import { NoopAttestationEmitter } from "@/lib/attestations";
+import { demoScenarios, getDefaultApplicantProfileInput } from "@/lib/demo-scenarios";
+import { buildExternalEvaluatorRequest, evaluatePreparedProfile } from "@/lib/evaluator-client";
+import {
+  buildEvidenceItems,
+  buildNormalizedEvidenceBundle,
+  normalizeApplicantInput,
+} from "@/lib/grading";
+import { readDatabase, writeDatabase } from "@/lib/persistence";
+import { buildDeterministicEvaluation } from "@/lib/rubric";
 import type {
-  AccessLog,
-  ApplicantInput,
-  ConsentGrant,
+  ApplicationDraft,
+  Applicant,
+  ApplicantProfile,
+  ApplicantProfileInput,
+  ApplicantProfileView,
+  AuditLog,
+  ConsentRecord,
   DisputeCase,
-  ProfileSummary,
-  ReviewAction,
+  GradingResult,
+  PersistedDatabase,
+  ProfileSubmission,
+  ReviewerNote,
+  ReviewerProfileView,
+  ShareLink,
+  ShareLinkView,
 } from "@/lib/types";
+import { validateApplicantProfileInput } from "@/lib/validators";
+import type {
+  DraftSnapshot,
+  ProfileStatusPayload,
+  ProfileSummary,
+  RecursivePartial,
+  EvaluationResultPayload,
+} from "@/lib/api-contracts";
+import { createEmptyApplicantProfileInput, calculateCompletionPercent } from "@/lib/profile-defaults";
+import { mergeApplicantProfileInput } from "@/lib/profile-merge";
 
-function parse(data: string): ProfileSummary {
-  return JSON.parse(data) as ProfileSummary;
+const attestationEmitter = new NoopAttestationEmitter();
+
+function addDays(date: Date, days: number) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy.toISOString();
 }
 
-async function save(report: ProfileSummary): Promise<ProfileSummary> {
-  await prisma.report.upsert({
-    where: { id: report.id },
-    update: { data: JSON.stringify(report) },
-    create: { id: report.id, data: JSON.stringify(report) },
-  });
-  return report;
-}
-
-function appendLog(report: ProfileSummary, entry: Omit<AccessLog, "id" | "at">) {
-  report.accessLogs.unshift({
+function createAuditLog(profileId: string, actor: AuditLog["actor"], action: string, detail: string): AuditLog {
+  return {
     id: crypto.randomUUID(),
+    profileId,
+    actor,
+    action,
+    detail,
     at: new Date().toISOString(),
-    ...entry,
-  });
+  };
 }
 
-export async function listReports(): Promise<ProfileSummary[]> {
-  const rows = await prisma.report.findMany({ orderBy: { createdAt: "desc" } });
+function applicantFromInput(applicantId: string, input: ApplicantProfileInput, createdAt: string): Applicant {
+  return {
+    id: applicantId,
+    fullName: input.personalInformation.fullName,
+    email: input.personalInformation.email,
+    phone: input.personalInformation.phone,
+    city: input.personalInformation.city,
+    state: input.personalInformation.state,
+    createdAt,
+  };
+}
 
-  if (rows.length === 0) {
-    const seeded = buildProfileSummary(getDefaultApplicantInput());
-    await save(seeded);
-    return [seeded];
+function syncApplicantFromInput(applicant: Applicant, input: ApplicantProfileInput) {
+  applicant.fullName = input.personalInformation.fullName;
+  applicant.email = input.personalInformation.email;
+  applicant.phone = input.personalInformation.phone;
+  applicant.city = input.personalInformation.city;
+  applicant.state = input.personalInformation.state;
+}
+
+function deriveProfileStatus(
+  recommendation: GradingResult["finalResult"]["recommendationStatus"],
+): ApplicantProfile["status"] {
+  if (recommendation === "Recommended") {
+    return "complete";
   }
 
-  return rows.map((r) => parse(r.data));
+  return "needs_review";
 }
 
-export async function getReport(reportId: string): Promise<ProfileSummary | undefined> {
-  const row = await prisma.report.findUnique({ where: { id: reportId } });
-  return row ? parse(row.data) : undefined;
+function buildDraftSnapshot(
+  draft: ApplicationDraft,
+): DraftSnapshot {
+  return {
+    draftId: draft.id,
+    profileId: draft.profileId,
+    applicantId: draft.applicantId,
+    version: draft.version,
+    completionPercent: draft.completionPercent,
+    updatedAt: draft.updatedAt,
+    input: draft.input,
+  };
 }
 
-export async function createReport(input: ApplicantInput): Promise<ProfileSummary> {
-  const report = buildProfileSummary(input);
-  return save(report);
+function buildProfileSummary(
+  database: PersistedDatabase,
+  profile: ApplicantProfile,
+): ProfileSummary | undefined {
+  const applicant = database.applicants.find((entry) => entry.id === profile.applicantId);
+  if (!applicant) {
+    return undefined;
+  }
+
+  const grading = profile.latestGradingResultId
+    ? database.gradingResults.find((entry) => entry.id === profile.latestGradingResultId)
+    : undefined;
+
+  return {
+    profileId: profile.id,
+    applicantId: profile.applicantId,
+    fullName: applicant.fullName,
+    email: applicant.email,
+    useCase: profile.useCase,
+    status: profile.status,
+    shareStatus: profile.shareStatus,
+    updatedAt: profile.updatedAt,
+    recommendationStatus: grading?.finalResult.recommendationStatus,
+    confidence: grading?.finalResult.confidence,
+    overallBand: grading?.finalResult.overallBand,
+  };
 }
 
-export async function logReportAccess(
-  reportId: string,
-  entry: Omit<AccessLog, "id" | "at">,
-): Promise<ProfileSummary | undefined> {
-  const report = await getReport(reportId);
-  if (!report) return undefined;
-  appendLog(report, entry);
-  return save(report);
+function buildProfileStatusPayload(
+  database: PersistedDatabase,
+  profile: ApplicantProfile,
+): ProfileStatusPayload {
+  const grading = profile.latestGradingResultId
+    ? database.gradingResults.find((entry) => entry.id === profile.latestGradingResultId)
+    : undefined;
+  const draft = profile.currentDraftId
+    ? database.drafts.find((entry) => entry.id === profile.currentDraftId)
+    : undefined;
+  const submission = profile.currentSubmissionId
+    ? database.submissions.find((entry) => entry.id === profile.currentSubmissionId)
+    : undefined;
+
+  return {
+    profileId: profile.id,
+    status: profile.status,
+    draftUpdatedAt: draft?.updatedAt,
+    submittedAt: submission?.submittedAt,
+    latestEvaluationAt: grading?.createdAt,
+    recommendationStatus: grading?.finalResult.recommendationStatus,
+  };
+}
+
+function buildEvaluationResultPayload(
+  database: PersistedDatabase,
+  profile: ApplicantProfile,
+): EvaluationResultPayload {
+  const grading = profile.latestGradingResultId
+    ? database.gradingResults.find((entry) => entry.id === profile.latestGradingResultId)
+    : undefined;
+
+  return {
+    profileId: profile.id,
+    status: profile.status,
+    result: grading?.finalResult,
+    grading: grading
+      ? {
+          id: grading.id,
+          provider: grading.provider,
+          mode: grading.mode,
+          fallbackUsed: grading.fallbackUsed,
+          warnings: grading.warnings,
+          traceId: grading.traceId,
+          createdAt: grading.createdAt,
+          rubricVersion: grading.rubricVersion,
+        }
+      : undefined,
+  };
+}
+
+function createConsentRecords(profileId: string, input: ApplicantProfileInput): ConsentRecord[] {
+  const now = new Date();
+  const entries: Array<{ source: ConsentRecord["source"]; active: boolean; scope: string; retentionDays: number }> = [
+    {
+      source: "identity_check",
+      active: input.consents.identity_check,
+      scope: "Identity confidence for housing application review",
+      retentionDays: 30,
+    },
+    {
+      source: "bank_connection",
+      active: input.consents.bank_connection,
+      scope: "Derived balance and payment signals for housing review",
+      retentionDays: 45,
+    },
+    {
+      source: "income_docs",
+      active: input.consents.income_docs,
+      scope: "Income-supporting documentation for housing review",
+      retentionDays: 45,
+    },
+    {
+      source: "housing_docs",
+      active: input.consents.housing_docs,
+      scope: "Lease, rent, and housing history evidence for housing review",
+      retentionDays: 60,
+    },
+    {
+      source: "profile_share",
+      active: input.consents.profile_share,
+      scope: "Single reviewer share link for housing-specific profile access",
+      retentionDays: 14,
+    },
+  ];
+
+  return entries.map((entry) => ({
+    id: crypto.randomUUID(),
+    profileId,
+    source: entry.source,
+    grantedAt: now.toISOString(),
+    expiresAt: addDays(now, entry.retentionDays),
+    status: entry.active ? "active" : "revoked",
+    scope: entry.scope,
+  }));
+}
+
+function toShareLinkView(link?: ShareLink): ShareLinkView | undefined {
+  if (!link) {
+    return undefined;
+  }
+
+  return {
+    id: link.id,
+    token: link.token,
+    expiresAt: link.expiresAt,
+    intendedAudience: link.intendedAudience,
+    active: !link.revokedAt && new Date(link.expiresAt).getTime() > Date.now(),
+  };
+}
+
+function buildApplicantProfileView(
+  database: PersistedDatabase,
+  profile: ApplicantProfile,
+): ApplicantProfileView | undefined {
+  const applicant = database.applicants.find((entry) => entry.id === profile.applicantId);
+  const submission = profile.currentSubmissionId
+    ? database.submissions.find((entry) => entry.id === profile.currentSubmissionId)
+    : undefined;
+
+  if (!applicant || !submission) {
+    return undefined;
+  }
+
+  const evidence = database.evidenceItems.filter((entry) => entry.submissionId === submission.id);
+  const consents = database.consentRecords.filter((entry) => entry.profileId === profile.id);
+  const gradingResult = profile.latestGradingResultId
+    ? database.gradingResults.find((entry) => entry.id === profile.latestGradingResultId)
+    : undefined;
+  const shareLink = toShareLinkView(
+    database.shareLinks.find((entry) => entry.profileId === profile.id && !entry.revokedAt),
+  );
+
+  return {
+    applicant,
+    profile,
+    submission,
+    evidence,
+    consents,
+    gradingResult,
+    shareLink,
+    disputes: database.disputes.filter((entry) => entry.profileId === profile.id),
+    reviewerNotes: database.reviewerNotes.filter((entry) => entry.profileId === profile.id),
+    auditLogs: database.auditLogs
+      .filter((entry) => entry.profileId === profile.id)
+      .sort((left, right) => right.at.localeCompare(left.at)),
+  };
+}
+
+function buildReviewerProfileView(
+  database: PersistedDatabase,
+  profile: ApplicantProfile,
+  token: string,
+): ReviewerProfileView | undefined {
+  const shareLink = database.shareLinks.find(
+    (entry) =>
+      entry.profileId === profile.id &&
+      entry.token === token &&
+      !entry.revokedAt &&
+      new Date(entry.expiresAt).getTime() > Date.now(),
+  );
+
+  if (!shareLink) {
+    return undefined;
+  }
+
+  const applicant = database.applicants.find((entry) => entry.id === profile.applicantId);
+  const submission = profile.currentSubmissionId
+    ? database.submissions.find((entry) => entry.id === profile.currentSubmissionId)
+    : undefined;
+  const gradingResult = profile.latestGradingResultId
+    ? database.gradingResults.find((entry) => entry.id === profile.latestGradingResultId)
+    : undefined;
+
+  if (!applicant || !submission) {
+    return undefined;
+  }
+
+  return {
+    applicantName: applicant.fullName,
+    useCase: profile.useCase,
+    profileStatus: profile.status,
+    gradingResult,
+    evidence: database.evidenceItems.filter((entry) => entry.submissionId === submission.id),
+    shareLink: toShareLinkView(shareLink)!,
+  };
+}
+
+async function seedDefaultProfile(database: PersistedDatabase) {
+  if (database.profiles.length > 0) {
+    return database;
+  }
+
+  const seeded = await createApplicantProfileInternal(database, getDefaultApplicantProfileInput(), "seed");
+  return seeded.database;
+}
+
+async function createApplicantProfileInternal(
+  database: PersistedDatabase,
+  rawInput: ApplicantProfileInput,
+  source: "user" | "seed",
+) {
+  const normalizedInput = normalizeApplicantInput(rawInput);
+  const now = new Date().toISOString();
+  const applicantId = crypto.randomUUID();
+  const profileId = crypto.randomUUID();
+  const draftId = crypto.randomUUID();
+  const submissionId = crypto.randomUUID();
+  const shareLinkId = crypto.randomUUID();
+  const shareToken = crypto.randomUUID();
+
+  const applicant = applicantFromInput(applicantId, normalizedInput, now);
+
+  const profile: ApplicantProfile = {
+    id: profileId,
+    applicantId,
+    useCase: normalizedInput.useCase,
+    status: "grading",
+    currentDraftId: draftId,
+    currentSubmissionId: submissionId,
+    shareStatus: normalizedInput.consents.profile_share ? "shareable" : "private",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const draft: ApplicationDraft = {
+    id: draftId,
+    profileId,
+    applicantId,
+    input: normalizedInput,
+    completionPercent: calculateCompletionPercent(normalizedInput),
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+  };
+
+  const submission: ProfileSubmission = {
+    id: submissionId,
+    profileId,
+    submittedAt: now,
+    rawFormSnapshot: normalizedInput,
+    version: 1,
+  };
+
+  const evidence = buildEvidenceItems(submissionId, normalizedInput);
+  const consents = createConsentRecords(profileId, normalizedInput);
+  const normalizedEvidence = buildNormalizedEvidenceBundle(profileId, submissionId, normalizedInput);
+
+  database.applicants.push(applicant);
+  database.profiles.push(profile);
+  database.drafts.push(draft);
+  database.submissions.push(submission);
+  database.evidenceItems.push(...evidence);
+  database.consentRecords.push(...consents);
+
+  if (normalizedInput.consents.profile_share) {
+    database.shareLinks.push({
+      id: shareLinkId,
+      profileId,
+      token: shareToken,
+      expiresAt: addDays(new Date(now), 14),
+      intendedAudience: "Housing reviewer",
+    });
+  }
+
+  database.auditLogs.push(
+    createAuditLog(profileId, "system", "profile_created", `Applicant profile was created via ${source}.`),
+    createAuditLog(profileId, "system", "submission_saved", "Application submission snapshot was persisted."),
+    createAuditLog(profileId, "system", "evaluation_started", "Evaluation pipeline was started for the latest submission."),
+  );
+  await writeDatabase(database);
+
+  const deterministicEvaluation = buildDeterministicEvaluation(normalizedEvidence);
+  const evaluatorRequest = buildExternalEvaluatorRequest({
+    profileId,
+    submissionId,
+    input: normalizedInput,
+    normalizedEvidence,
+    deterministicFeatures: deterministicEvaluation.features,
+  });
+  const graded = await evaluatePreparedProfile(
+    evaluatorRequest,
+    deterministicEvaluation.finalResult,
+  );
+
+  const gradingResult: GradingResult = {
+    id: crypto.randomUUID(),
+    profileId,
+    submissionId,
+    rubricVersion: evaluatorRequest.rubricVersion,
+    provider: graded.provider,
+    mode: graded.mode,
+    deterministicFeatures: deterministicEvaluation.features,
+    evaluatorRequest,
+    evaluatorResponse: graded.evaluatorResponse,
+    finalResult: graded.finalResult,
+    fallbackUsed: graded.fallbackUsed,
+    warnings: graded.warnings,
+    traceId: graded.traceId,
+    createdAt: new Date().toISOString(),
+  };
+
+  profile.latestGradingResultId = gradingResult.id;
+  profile.status = deriveProfileStatus(graded.finalResult.recommendationStatus);
+  profile.updatedAt = new Date().toISOString();
+  database.gradingResults.push(gradingResult);
+  database.auditLogs.push(
+    createAuditLog(
+      profileId,
+      "system",
+      "evaluation_completed",
+      graded.fallbackUsed
+        ? "Deterministic evaluation was stored because the external evaluator was unavailable."
+        : `Profile evaluation was stored using ${graded.provider} in ${graded.mode} mode.`,
+    ),
+  );
+
+  graded.warnings.forEach((warning) => {
+    database.auditLogs.push(createAuditLog(profileId, "system", "evaluation_warning", warning));
+  });
+
+  await attestationEmitter.emitSignedProfileExport(
+    buildApplicantProfileView(database, profile)!,
+  );
+
+  return {
+    database,
+    view: buildApplicantProfileView(database, profile)!,
+  };
+}
+
+export async function listProfiles() {
+  const database = await readDatabase();
+  return database.profiles
+    .map((profile) => buildApplicantProfileView(database, profile))
+    .filter((view): view is ApplicantProfileView => Boolean(view));
+}
+
+export async function listProfileSummaries() {
+  const database = await readDatabase();
+  return database.profiles
+    .map((profile) => buildProfileSummary(database, profile))
+    .filter((summary): summary is ProfileSummary => Boolean(summary));
+}
+
+export async function createProfileDraft(initialPatch?: RecursivePartial<ApplicantProfileInput>) {
+  const now = new Date().toISOString();
+  const applicantId = crypto.randomUUID();
+  const profileId = crypto.randomUUID();
+  const draftId = crypto.randomUUID();
+  const input = mergeApplicantProfileInput(
+    createEmptyApplicantProfileInput(),
+    initialPatch ?? {},
+  );
+
+  const applicant = applicantFromInput(applicantId, input, now);
+  const profile: ApplicantProfile = {
+    id: profileId,
+    applicantId,
+    useCase: input.useCase,
+    status: "draft",
+    currentDraftId: draftId,
+    shareStatus: "private",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const draft: ApplicationDraft = {
+    id: draftId,
+    profileId,
+    applicantId,
+    input,
+    completionPercent: calculateCompletionPercent(input),
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+  };
+
+  const database = await readDatabase();
+  database.applicants.push(applicant);
+  database.profiles.push(profile);
+  database.drafts.push(draft);
+  database.auditLogs.push(
+    createAuditLog(profileId, "system", "draft_created", "Application draft was created."),
+  );
+  await writeDatabase(database);
+
+  return {
+    summary: buildProfileSummary(database, profile)!,
+    draft: buildDraftSnapshot(draft),
+  };
+}
+
+export async function getProfileDraft(profileId: string) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+  if (!profile || !profile.currentDraftId) {
+    return undefined;
+  }
+
+  const draft = database.drafts.find((entry) => entry.id === profile.currentDraftId);
+  if (!draft) {
+    return undefined;
+  }
+
+  return buildDraftSnapshot(draft);
+}
+
+export async function updateProfileDraft(
+  profileId: string,
+  patch: RecursivePartial<ApplicantProfileInput>,
+) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+  if (!profile || !profile.currentDraftId) {
+    return undefined;
+  }
+
+  const draft = database.drafts.find((entry) => entry.id === profile.currentDraftId);
+  const applicant = database.applicants.find((entry) => entry.id === profile.applicantId);
+  if (!draft || !applicant) {
+    return undefined;
+  }
+
+  draft.input = mergeApplicantProfileInput(draft.input, patch);
+  draft.updatedAt = new Date().toISOString();
+  draft.version += 1;
+  draft.completionPercent = calculateCompletionPercent(draft.input);
+  profile.updatedAt = draft.updatedAt;
+  profile.useCase = draft.input.useCase;
+  syncApplicantFromInput(applicant, draft.input);
+  database.auditLogs.push(
+    createAuditLog(profileId, "applicant", "draft_updated", "Application draft fields were updated."),
+  );
+  await writeDatabase(database);
+
+  return {
+    summary: buildProfileSummary(database, profile)!,
+    draft: buildDraftSnapshot(draft),
+  };
+}
+
+export async function submitProfileDraft(
+  profileId: string,
+  patch?: RecursivePartial<ApplicantProfileInput>,
+) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+  if (!profile || !profile.currentDraftId) {
+    return { ok: false as const, code: "draft_not_found" as const };
+  }
+
+  const draft = database.drafts.find((entry) => entry.id === profile.currentDraftId);
+  const applicant = database.applicants.find((entry) => entry.id === profile.applicantId);
+  if (!draft || !applicant) {
+    return { ok: false as const, code: "draft_not_found" as const };
+  }
+
+  if (patch) {
+    draft.input = mergeApplicantProfileInput(draft.input, patch);
+    draft.version += 1;
+  }
+
+  const validationIssues = validateApplicantProfileInput(draft.input);
+  if (validationIssues.length > 0) {
+    return {
+      ok: false as const,
+      code: "validation_failed" as const,
+      issues: validationIssues,
+      draft: buildDraftSnapshot(draft),
+    };
+  }
+
+  const normalizedInput = normalizeApplicantInput(draft.input);
+  const now = new Date().toISOString();
+  syncApplicantFromInput(applicant, normalizedInput);
+  draft.input = normalizedInput;
+  draft.updatedAt = now;
+  draft.completionPercent = calculateCompletionPercent(normalizedInput);
+
+  const submissionId = crypto.randomUUID();
+  const submission: ProfileSubmission = {
+    id: submissionId,
+    profileId,
+    submittedAt: now,
+    rawFormSnapshot: normalizedInput,
+    version: database.submissions.filter((entry) => entry.profileId === profileId).length + 1,
+  };
+  const evidence = buildEvidenceItems(submissionId, normalizedInput);
+  const consents = createConsentRecords(profileId, normalizedInput);
+  const normalizedEvidence = buildNormalizedEvidenceBundle(profileId, submissionId, normalizedInput);
+
+  profile.status = "grading";
+  profile.currentSubmissionId = submissionId;
+  profile.updatedAt = now;
+  profile.useCase = normalizedInput.useCase;
+  profile.shareStatus = normalizedInput.consents.profile_share ? "shareable" : profile.shareStatus;
+
+  database.submissions.push(submission);
+  database.evidenceItems = database.evidenceItems.filter((entry) => entry.submissionId !== submissionId);
+  database.evidenceItems.push(...evidence);
+  database.consentRecords = database.consentRecords.filter((entry) => entry.profileId !== profileId);
+  database.consentRecords.push(...consents);
+  database.auditLogs.push(
+    createAuditLog(profileId, "system", "submission_saved", "Draft was submitted and snapshot persisted."),
+    createAuditLog(profileId, "system", "evaluation_started", "Evaluation pipeline was started for the submitted draft."),
+  );
+  await writeDatabase(database);
+
+  const deterministicEvaluation = buildDeterministicEvaluation(normalizedEvidence);
+  const evaluatorRequest = buildExternalEvaluatorRequest({
+    profileId,
+    submissionId,
+    input: normalizedInput,
+    normalizedEvidence,
+    deterministicFeatures: deterministicEvaluation.features,
+  });
+  const graded = await evaluatePreparedProfile(evaluatorRequest, deterministicEvaluation.finalResult);
+  const gradingResult: GradingResult = {
+    id: crypto.randomUUID(),
+    profileId,
+    submissionId,
+    rubricVersion: evaluatorRequest.rubricVersion,
+    provider: graded.provider,
+    mode: graded.mode,
+    deterministicFeatures: deterministicEvaluation.features,
+    evaluatorRequest,
+    evaluatorResponse: graded.evaluatorResponse,
+    finalResult: graded.finalResult,
+    fallbackUsed: graded.fallbackUsed,
+    warnings: graded.warnings,
+    traceId: graded.traceId,
+    createdAt: new Date().toISOString(),
+  };
+  profile.latestGradingResultId = gradingResult.id;
+  profile.status = deriveProfileStatus(graded.finalResult.recommendationStatus);
+  profile.updatedAt = new Date().toISOString();
+  database.gradingResults.push(gradingResult);
+
+  if (normalizedInput.consents.profile_share && !database.shareLinks.find((entry) => entry.profileId === profileId && !entry.revokedAt)) {
+    database.shareLinks.push({
+      id: crypto.randomUUID(),
+      profileId,
+      token: crypto.randomUUID(),
+      expiresAt: addDays(new Date(), 14),
+      intendedAudience: "Housing reviewer",
+    });
+  }
+
+  database.auditLogs.push(
+    createAuditLog(
+      profileId,
+      "system",
+      "evaluation_completed",
+      graded.fallbackUsed
+        ? "Deterministic evaluation was stored because the external evaluator was unavailable."
+        : `Profile evaluation was stored using ${graded.provider} in ${graded.mode} mode.`,
+    ),
+  );
+  graded.warnings.forEach((warning) => {
+    database.auditLogs.push(createAuditLog(profileId, "system", "evaluation_warning", warning));
+  });
+  await writeDatabase(database);
+
+  const view = buildApplicantProfileView(database, profile);
+  if (view) {
+    await attestationEmitter.emitSignedProfileExport(view);
+  }
+
+  return {
+    ok: true as const,
+    view: view!,
+    summary: buildProfileSummary(database, profile)!,
+    status: buildProfileStatusPayload(database, profile),
+    evaluation: buildEvaluationResultPayload(database, profile),
+  };
+}
+
+export async function getApplicantProfileView(profileId: string) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+
+  if (!profile) {
+    return undefined;
+  }
+
+  return buildApplicantProfileView(database, profile);
+}
+
+export async function getProfileStatus(profileId: string) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+  if (!profile) {
+    return undefined;
+  }
+
+  return buildProfileStatusPayload(database, profile);
+}
+
+export async function getProfileEvaluation(profileId: string) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+  if (!profile) {
+    return undefined;
+  }
+
+  return buildEvaluationResultPayload(database, profile);
+}
+
+export async function getReviewerProfileView(profileId: string, token: string) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+
+  if (!profile) {
+    return undefined;
+  }
+
+  return buildReviewerProfileView(database, profile, token);
+}
+
+export async function createApplicantProfile(rawInput: ApplicantProfileInput) {
+  const validationIssues = validateApplicantProfileInput(rawInput);
+
+  if (validationIssues.length > 0) {
+    return {
+      ok: false as const,
+      issues: validationIssues,
+    };
+  }
+
+  const database = await seedDefaultProfile(await readDatabase());
+  const created = await createApplicantProfileInternal(database, rawInput, "user");
+  await writeDatabase(created.database);
+
+  return {
+    ok: true as const,
+    view: created.view,
+  };
+}
+
+export async function createShareLink(profileId: string) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+
+  if (!profile) {
+    return undefined;
+  }
+
+  database.shareLinks = database.shareLinks.map((entry) =>
+    entry.profileId === profileId && !entry.revokedAt
+      ? { ...entry, revokedAt: new Date().toISOString() }
+      : entry,
+  );
+
+  const shareLink: ShareLink = {
+    id: crypto.randomUUID(),
+    profileId,
+    token: crypto.randomUUID(),
+    expiresAt: addDays(new Date(), 14),
+    intendedAudience: "Housing reviewer",
+  };
+
+  database.shareLinks.push(shareLink);
+  profile.shareStatus = "shareable";
+  profile.updatedAt = new Date().toISOString();
+  database.auditLogs.push(
+    createAuditLog(profileId, "applicant", "share_link_created", "Applicant created a new reviewer share link."),
+  );
+  await writeDatabase(database);
+
+  return toShareLinkView(shareLink);
+}
+
+export async function revokeShareLinks(profileId: string) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+
+  if (!profile) {
+    return undefined;
+  }
+
+  database.shareLinks = database.shareLinks.map((entry) =>
+    entry.profileId === profileId && !entry.revokedAt
+      ? { ...entry, revokedAt: new Date().toISOString() }
+      : entry,
+  );
+  profile.shareStatus = "revoked";
+  profile.updatedAt = new Date().toISOString();
+  database.auditLogs.push(
+    createAuditLog(profileId, "applicant", "share_link_revoked", "Applicant revoked reviewer access."),
+  );
+  await writeDatabase(database);
+
+  return buildApplicantProfileView(database, profile);
 }
 
 export async function addDispute(
-  reportId: string,
-  dispute: Omit<DisputeCase, "id" | "createdAt" | "status">,
-): Promise<ProfileSummary | undefined> {
-  const report = await getReport(reportId);
-  if (!report) return undefined;
+  profileId: string,
+  dispute: Pick<DisputeCase, "field" | "explanation">,
+) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
 
-  const newDispute: DisputeCase = {
-    ...dispute,
+  if (!profile) {
+    return undefined;
+  }
+
+  database.disputes.push({
     id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
+    profileId,
+    field: dispute.field,
+    explanation: dispute.explanation,
     status: "open",
-  };
-
-  report.disputes.unshift(newDispute);
-  appendLog(report, {
-    actor: "applicant",
-    action: "dispute_opened",
-    detail: `Dispute submitted for ${dispute.field}.`,
+    createdAt: new Date().toISOString(),
   });
-
-  return save(report);
-}
-
-export async function recordReview(
-  reportId: string,
-  review: ReviewAction,
-): Promise<ProfileSummary | undefined> {
-  const report = await getReport(reportId);
-  if (!report) return undefined;
-
-  report.reviewerAction = review;
-  appendLog(report, {
-    actor: "reviewer",
-    action: "review_note_added",
-    detail: `${review.reviewerName} recorded "${review.disposition}".`,
-  });
-
-  return save(report);
-}
-
-export async function updateConsentStatus(
-  reportId: string,
-  source: ConsentGrant["source"],
-  status: ConsentGrant["status"],
-): Promise<ProfileSummary | undefined> {
-  const report = await getReport(reportId);
-  if (!report) return undefined;
-
-  report.consent = report.consent.map((grant) =>
-    grant.source === source ? { ...grant, status } : grant,
+  database.auditLogs.push(
+    createAuditLog(profileId, "applicant", "dispute_opened", `Applicant opened a dispute for ${dispute.field}.`),
   );
+  await writeDatabase(database);
 
-  appendLog(report, {
-    actor: "applicant",
-    action: status === "revoked" ? "consent_revoked" : "consent_restored",
-    detail: `Consent for ${source} changed to ${status}.`,
+  return buildApplicantProfileView(database, profile);
+}
+
+export async function addReviewerNote(
+  profileId: string,
+  note: Omit<ReviewerNote, "id" | "profileId" | "createdAt">,
+) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((entry) => entry.id === profileId);
+
+  if (!profile) {
+    return undefined;
+  }
+
+  database.reviewerNotes.unshift({
+    id: crypto.randomUUID(),
+    profileId,
+    createdAt: new Date().toISOString(),
+    ...note,
   });
+  database.auditLogs.push(
+    createAuditLog(
+      profileId,
+      "reviewer",
+      "reviewer_note_added",
+      `${note.reviewerName} recorded reviewer guidance: ${note.disposition}.`,
+    ),
+  );
+  await writeDatabase(database);
 
-  return save(report);
+  return buildApplicantProfileView(database, profile);
+}
+
+export async function logProfileAccess(
+  profileId: string,
+  entry: Pick<AuditLog, "actor" | "action" | "detail">,
+) {
+  const database = await readDatabase();
+  const profile = database.profiles.find((candidate) => candidate.id === profileId);
+
+  if (!profile) {
+    return undefined;
+  }
+
+  database.auditLogs.push(createAuditLog(profileId, entry.actor, entry.action, entry.detail));
+  await writeDatabase(database);
+
+  return buildApplicantProfileView(database, profile);
+}
+
+export async function getSeededScenarioPreview() {
+  const database = await seedDefaultProfile(await readDatabase());
+  await writeDatabase(database);
+  const profiles = database.profiles
+    .map((profile) => buildApplicantProfileView(database, profile))
+    .filter((view): view is ApplicantProfileView => Boolean(view));
+  const first = profiles[0];
+
+  if (!first) {
+    return undefined;
+  }
+
+  return {
+    profileId: first.profile.id,
+    shareLink: first.shareLink,
+    scenarios: demoScenarios.map((scenario) => ({
+      key: scenario.key,
+      label: scenario.label,
+      description: scenario.description,
+    })),
+  };
+}
+
+export function createSignedProfileDigest(view: ApplicantProfileView) {
+  const digest = createHash("sha256")
+    .update(JSON.stringify({
+      applicantId: view.applicant.id,
+      profileId: view.profile.id,
+      gradingResultId: view.gradingResult?.id ?? "none",
+      generatedAt: view.gradingResult?.createdAt ?? view.profile.updatedAt,
+    }))
+    .digest("hex");
+
+  return {
+    payloadHash: digest,
+    signaturePreview: digest.slice(0, 18),
+  };
 }

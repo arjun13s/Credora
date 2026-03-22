@@ -1,50 +1,45 @@
 import { BandPill } from "@/components/band-pill";
 import { formatDate } from "@/lib/format";
-import type { ProfileSummary } from "@/lib/types";
+import type { ApplicantProfileView } from "@/lib/types";
 
-export function RecommendationBanner({ report }: { report: ProfileSummary }) {
+export function RecommendationBanner({ view }: { view: ApplicantProfileView }) {
+  const result = view.gradingResult?.finalResult;
+
   return (
     <section className="hero-card stack-md">
       <div className="row row--space-start row--top">
         <div className="stack-sm">
-          <span className="eyebrow">Rental reliability profile</span>
-          <h1>{report.applicantName}</h1>
+          <span className="eyebrow">Applicant Profile</span>
+          <h1>{view.applicant.fullName}</h1>
           <p className="lede">
-            {report.personaLabel}. Generated for housing screening only, with
-            applicant-visible evidence and a dispute path.
+            Housing-specific applicant trust profile generated for rental review,
+            with explainable evidence, confidence-aware evaluation, and applicant-visible controls.
           </p>
         </div>
         <div className="score-panel">
-          <span className="score-kicker">Explainable score</span>
-          <div className="score-ring-wrap">
-            <svg className="score-ring" viewBox="0 0 100 100" width="110" height="110">
-              <circle className="score-ring-track" cx="50" cy="50" r="42" />
-              <circle
-                className="score-ring-fill"
-                cx="50"
-                cy="50"
-                r="42"
-                strokeDasharray="263.9"
-                strokeDashoffset={
-                  report.overallScore !== null
-                    ? 263.9 * (1 - report.overallScore / 100)
-                    : 263.9
-                }
-              />
-            </svg>
-            <strong className="hero-score">
-              {report.overallScore !== null ? report.overallScore : "--"}
-            </strong>
-          </div>
-          <BandPill tone={report.confidence}>{report.confidence} confidence</BandPill>
+          <span className="score-kicker">Applicant trust summary</span>
+          <strong className="hero-score">
+            {result?.overallScore ?? "--"}
+          </strong>
+          <BandPill tone={result?.confidence ?? "Low"}>
+            {result?.confidence ?? "Low"} confidence
+          </BandPill>
         </div>
       </div>
       <div className="chip-group">
-        <BandPill tone={report.recommendation}>{report.recommendation}</BandPill>
-        <span className="chip chip--outline">Valid through {formatDate(report.validUntil)}</span>
-        <span className="chip chip--outline">Target rent ${report.targetRent}/mo</span>
+        <BandPill tone={result?.recommendationStatus ?? "Needs manual review"}>
+          {result?.recommendationStatus ?? "Needs manual review"}
+        </BandPill>
+        <BandPill tone={view.profile.status}>{view.profile.status.replaceAll("_", " ")}</BandPill>
+        <span className="chip chip--outline">Updated {formatDate(view.profile.updatedAt)}</span>
+        <span className="chip chip--outline">
+          Target rent ${view.submission.rawFormSnapshot.personalInformation.targetRent}/mo
+        </span>
       </div>
-      <p className="body-strong">{report.narrative}</p>
+      <p className="body-strong">
+        {result?.summary ??
+          "Credora is still processing this housing application profile."}
+      </p>
     </section>
   );
 }

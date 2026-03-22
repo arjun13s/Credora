@@ -1,12 +1,12 @@
 import { BandPill } from "@/components/band-pill";
-import type { TrustCategory } from "@/lib/types";
+import type { CategoryAssessment } from "@/lib/types";
 
-export function CategoryCard({ category }: { category: TrustCategory }) {
+export function CategoryCard({ category }: { category: CategoryAssessment }) {
   return (
     <article className="card stack-sm">
       <div className="row row--space-start">
         <div className="stack-xs">
-          <span className="eyebrow eyebrow--subtle">{category.weight}% weight</span>
+          <span className="eyebrow eyebrow--subtle">{category.key.replaceAll("_", " ")}</span>
           <h3>{category.title}</h3>
         </div>
         <div className="stack-xs align-end">
@@ -24,7 +24,7 @@ export function CategoryCard({ category }: { category: TrustCategory }) {
       </div>
       <p className="body-muted">{category.rationale}</p>
       <div className="chip-group">
-        {category.drivers.map((driver) => (
+        {category.evidenceLabels.map((driver) => (
           <span key={driver} className="chip chip--soft">
             {driver}
           </span>
