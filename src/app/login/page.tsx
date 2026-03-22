@@ -8,21 +8,19 @@ import { Logo } from "@/components/logo";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams?.get("callbackUrl") || "/";
+  const role = searchParams?.get("role") as "applicant" | "reviewer" | null;
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleDemoLogin = async (role: "applicant" | "reviewer") => {
+  const handleLogin = async (loginRole: "applicant" | "reviewer") => {
     setIsLoading(true);
     setError("");
 
-    try {
-      const email =
-        role === "applicant"
-          ? "applicant@credora.com"
-          : "reviewer@credora.com";
+    const email = loginRole === "applicant" ? "applicant@credora.com" : "reviewer@credora.com";
+    const redirectTo = loginRole === "applicant" ? "/applicant" : "/review";
 
+    try {
       const result = await signIn("credentials", {
         redirect: false,
         email,
@@ -30,9 +28,9 @@ function LoginForm() {
       });
 
       if (result?.error) {
-        setError("Invalid credentials. Please try again.");
+        setError("Sign in failed. Please try again.");
       } else {
-        router.push(callbackUrl);
+        router.push(redirectTo);
         router.refresh();
       }
     } catch {
@@ -43,44 +41,50 @@ function LoginForm() {
   };
 
   return (
-    <div className="marketing-shell" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div className="card stack-md" style={{ maxWidth: 420, width: "100%" }}>
-        <div className="stack-sm" style={{ textAlign: "center" }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.25rem" }}>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: "2rem" }}>
+      <div style={{ width: "100%", maxWidth: 480 }}>
+
+        <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "1rem" }}>
             <Logo size={40} />
           </div>
-          <h2>Sign in to Credora</h2>
-          <p className="body-muted">Choose a demo account to continue</p>
+          <h2 style={{ marginBottom: "0.4rem" }}>Sign in to Credora</h2>
+          <p className="body-muted">
+            {role === "reviewer" ? "Signing in as a reviewer" : role === "applicant" ? "Signing in as an applicant" : "Choose your role to continue"}
+          </p>
         </div>
 
         {error && (
-          <div className="status-banner" style={{ background: "var(--caution-soft)", color: "var(--caution)" }}>
+          <div style={{ background: "var(--caution-soft)", color: "var(--caution)", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.875rem" }}>
             {error}
           </div>
         )}
 
-        <div className="stack-sm">
-          <button
-            onClick={() => handleDemoLogin("applicant")}
-            disabled={isLoading}
-            className="button button--primary"
-            style={{ width: "100%" }}
-          >
-            {isLoading ? "Signing in\u2026" : "Sign in as Applicant"}
-          </button>
-
-          <button
-            onClick={() => handleDemoLogin("reviewer")}
-            disabled={isLoading}
-            className="button button--secondary"
-            style={{ width: "100%" }}
-          >
-            {isLoading ? "Signing in\u2026" : "Sign in as Reviewer"}
-          </button>
+        <div style={{ display: "grid", gap: "0.75rem" }}>
+          {(!role || role === "applicant") && (
+            <button
+              onClick={() => handleLogin("applicant")}
+              disabled={isLoading}
+              className="button button--primary"
+              style={{ width: "100%", height: "52px", fontSize: "0.95rem" }}
+            >
+              {isLoading ? "Signing in…" : "Continue as Applicant"}
+            </button>
+          )}
+          {(!role || role === "reviewer") && (
+            <button
+              onClick={() => handleLogin("reviewer")}
+              disabled={isLoading}
+              className="button button--secondary"
+              style={{ width: "100%", height: "52px", fontSize: "0.95rem" }}
+            >
+              {isLoading ? "Signing in…" : "Continue as Reviewer"}
+            </button>
+          )}
         </div>
 
-        <p className="body-muted" style={{ textAlign: "center", fontSize: "0.82rem" }}>
-          Demo credentials &mdash; password: <code style={{ fontFamily: "var(--font-mono)" }}>password</code>
+        <p className="body-muted" style={{ textAlign: "center", fontSize: "0.78rem", marginTop: "1.5rem" }}>
+          Demo only — no real credentials required
         </p>
       </div>
     </div>
@@ -89,13 +93,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="marketing-shell" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <p className="body-muted">Loading&hellip;</p>
-        </div>
-      }
-    >
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
       <LoginForm />
     </Suspense>
   );

@@ -1325,6 +1325,137 @@ h3 {
   font-size: 0.88rem;
 }
 
+/* ─── Role cards (landing hero, logged-out) ─────────────────── */
+
+.role-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1.25rem 1.35rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  cursor: pointer;
+}
+
+.role-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md), 0 0 20px var(--accent-soft);
+  transform: translateY(-2px);
+}
+
+.role-card__label {
+  font-size: 0.97rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.role-card__sub {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.role-card__arrow {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ─── Applicant tile grid (reviewer dashboard) ───────────────── */
+
+.applicant-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.applicant-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.75rem 1.25rem 1.5rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  text-align: center;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  cursor: pointer;
+}
+
+.applicant-tile:hover {
+  border-color: var(--accent-mid);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.applicant-tile__score-ring {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--ring-track);
+  padding: 6px;
+  flex-shrink: 0;
+}
+
+.applicant-tile__score-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.applicant-tile__score-num {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.applicant-tile__score-denom {
+  font-size: 0.6rem;
+  color: var(--text-soft);
+  font-weight: 500;
+}
+
+.applicant-tile__info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.applicant-tile__name {
+  font-size: 0.97rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.applicant-tile__date {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
+
+.applicant-tile__cta {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+}
+
 /* ─── Responsive ────────────────────────────────────────────── */
 
 @media (max-width: 1080px) {
@@ -1341,6 +1472,7 @@ h3 {
   .file-preview-grid { grid-template-columns: 1fr; }
   .section-side { order: -1; }
   .sticky-card { position: static; }
+  .applicant-tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
@@ -1367,6 +1499,10 @@ h3 {
   .site-header-inner { height: auto; padding: 0.85rem 0; flex-wrap: wrap; }
 
   .cta-section { padding: 2.5rem 1.5rem; }
+
+  .applicant-tile-grid { grid-template-columns: 1fr; }
+
+  .role-card-row { grid-template-columns: 1fr !important; }
 }
 
 /* ─── Theme toggle button ───────────────────────────────────── */

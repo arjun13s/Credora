@@ -2,7 +2,7 @@ import Link from "next/link";
 import { auth, signOut } from "@/auth";
 
 import { Logo } from "@/components/logo";
-import { listReports } from "@/lib/db";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -27,15 +27,15 @@ export default async function HomePage() {
             <span>Credora</span>
           </Link>
           <nav className="site-nav">
-            {(!isLoggedIn || (session?.user as any)?.role === "applicant") && (
-              <Link href="/applicant">For applicants</Link>
+            {isLoggedIn && (session?.user as any)?.role === "applicant" && (
+              <Link href="/applicant">My profile</Link>
             )}
-            {(!isLoggedIn || (session?.user as any)?.role === "reviewer") && (
+            {isLoggedIn && (session?.user as any)?.role === "reviewer" && (
               <Link href="/review">Reviewer Portal</Link>
             )}
           </nav>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            {isLoggedIn ? (
+            {isLoggedIn && (
               <form
                 action={async () => {
                   "use server";
@@ -46,16 +46,8 @@ export default async function HomePage() {
                   Sign out ({session.user?.name})
                 </button>
               </form>
-            ) : (
-              <>
-                <Link className="button button--ghost" href="/login" style={{ height: "36px", padding: "0 1rem" }}>
-                  Sign in
-                </Link>
-                <Link className="button button--primary" href="/applicant" style={{ height: "36px", padding: "0 1rem" }}>
-                  Get started
-                </Link>
-              </>
             )}
+            <ThemeToggle />
           </div>
         </div>
       </header>
@@ -73,14 +65,32 @@ export default async function HomePage() {
                 Credora securely transforms consented financial and housing data into an actionable reliability profile. We empower property managers with transparent insights and applicants with a holistic financial identity.
               </p>
 
-              <div className="button-row">
-                <Link className="button button--primary" href="/applicant">
-                  Build your profile
-                </Link>
-                <Link className="button button--secondary" href="/review">
-                  Reviewer Portal
-                </Link>
-              </div>
+              {isLoggedIn ? (
+                <div className="button-row" style={{ marginTop: "2rem" }}>
+                  {(session?.user as any)?.role === "applicant" ? (
+                    <Link className="button button--primary" href="/applicant">
+                      Go to my profile
+                    </Link>
+                  ) : (
+                    <Link className="button button--primary" href="/review">
+                      Go to Reviewer Portal
+                    </Link>
+                  )}
+                </div>
+              ) : (
+                <div className="role-card-row" style={{ marginTop: "2rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                  <Link href="/login?role=applicant" className="role-card">
+                    <span className="role-card__label">I&apos;m an Applicant</span>
+                    <span className="role-card__sub">Build your reliability profile</span>
+                    <span className="role-card__arrow">→</span>
+                  </Link>
+                  <Link href="/login?role=reviewer" className="role-card">
+                    <span className="role-card__label">I&apos;m a Reviewer</span>
+                    <span className="role-card__sub">View applicant profiles</span>
+                    <span className="role-card__arrow">→</span>
+                  </Link>
+                </div>
+              )}
             </div>
 
             {/* Right: animated product mockup */}
@@ -269,15 +279,29 @@ export default async function HomePage() {
 
         {/* CTA */}
         <div className="cta-section">
-          <h2>Ready to build your profile?</h2>
+          <h2>Ready to get started?</h2>
           <p>Complete your profile efficiently. Our specialists review every application to ensure precision and fairness—without automated denials.</p>
-          <div className="button-row">
-            <Link className="button button--white" href="/applicant">
-              Build applicant profile
-            </Link>
-            <Link className="button button--white-outline" href="/review">
-              Access Reviewer Portal
-            </Link>
+          <div className="button-row" style={{ justifyContent: "center" }}>
+            {isLoggedIn ? (
+              (session?.user as any)?.role === "applicant" ? (
+                <Link className="button button--white" href="/applicant">
+                  Go to my profile
+                </Link>
+              ) : (
+                <Link className="button button--white" href="/review">
+                  Go to Reviewer Portal
+                </Link>
+              )
+            ) : (
+              <>
+                <Link className="button button--white" href="/login?role=applicant">
+                  Sign in as Applicant
+                </Link>
+                <Link className="button button--white-outline" href="/login?role=reviewer">
+                  Sign in as Reviewer
+                </Link>
+              </>
+            )}
           </div>
         </div>
 

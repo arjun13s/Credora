@@ -3,6 +3,7 @@ import { auth, signOut } from "@/auth";
 
 import { listReports } from "@/lib/db";
 import { Logo } from "@/components/logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export default async function ReviewerDashboardPage() {
                 Sign in
               </Link>
             )}
+            <ThemeToggle />
           </div>
         </div>
       </header>
@@ -65,55 +67,58 @@ export default async function ReviewerDashboardPage() {
               <p className="body-muted">No applicant profiles have been submitted yet.</p>
             </div>
           ) : (
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                <thead>
-                  <tr style={{ background: "var(--bg-soft)", borderBottom: "1px solid var(--border)" }}>
-                    <th style={{ padding: "1rem", fontWeight: 600, fontSize: "0.85rem", color: "var(--text-secondary)" }}>Applicant Name</th>
-                    <th style={{ padding: "1rem", fontWeight: 600, fontSize: "0.85rem", color: "var(--text-secondary)" }}>Submission Date</th>
-                    <th style={{ padding: "1rem", fontWeight: 600, fontSize: "0.85rem", color: "var(--text-secondary)" }}>Score</th>
-                    <th style={{ padding: "1rem", fontWeight: 600, fontSize: "0.85rem", color: "var(--text-secondary)" }}>Status</th>
-                    <th style={{ padding: "1rem", fontWeight: 600, fontSize: "0.85rem", color: "var(--text-secondary)" }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reports.map((report) => (
-                    <tr key={report.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                      <td style={{ padding: "1rem", fontWeight: 500 }}>{report.applicantName}</td>
-                      <td style={{ padding: "1rem", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-                        {new Date(report.generatedAt).toLocaleDateString()}
-                      </td>
-                      <td style={{ padding: "1rem" }}>
-                        <span style={{ 
-                          background: "var(--positive-soft)", 
-                          color: "var(--positive)", 
-                          padding: "0.25rem 0.5rem", 
-                          borderRadius: "1rem", 
-                          fontSize: "0.85rem", 
-                          fontWeight: 600 
-                        }}>
-                          {report.overallScore ?? "N/A"}
+            <div className="applicant-tile-grid">
+              {reports.map((report) => {
+                const score = report.overallScore ?? null;
+                const scoreColor =
+                  score === null ? "var(--text-soft)"
+                  : score >= 75 ? "var(--positive)"
+                  : score >= 55 ? "var(--balanced)"
+                  : "var(--caution)";
+
+                const statusClass =
+                  report.reviewerAction
+                    ? "status-tag--positive"
+                    : "status-tag--neutral";
+
+                return (
+                  <Link
+                    key={report.id}
+                    href={`/review/${report.id}`}
+                    className="applicant-tile"
+                  >
+                    <div
+                      className="applicant-tile__score-ring"
+                      style={{
+                        background: score !== null
+                          ? `conic-gradient(${scoreColor} 0% ${score}%, var(--ring-track) ${score}% 100%)`
+                          : "var(--ring-track)",
+                      }}
+                    >
+                      <div className="applicant-tile__score-inner">
+                        <span className="applicant-tile__score-num" style={{ color: scoreColor }}>
+                          {score ?? "—"}
                         </span>
-                      </td>
-                      <td style={{ padding: "1rem" }}>
-                        <span style={{ fontSize: "0.9rem", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                          <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: report.reviewerAction ? "var(--positive)" : "var(--accent)" }} />
-                          {report.reviewerAction ? "Reviewed" : "Pending Evaluation"}
-                        </span>
-                      </td>
-                      <td style={{ padding: "1rem" }}>
-                        <Link 
-                          href={`/review/${report.id}`} 
-                          className="button button--ghost" 
-                          style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem", height: "auto" }}
-                        >
-                          View Profile
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        {score !== null && (
+                          <span className="applicant-tile__score-denom">/100</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="applicant-tile__info">
+                      <span className="applicant-tile__name">{report.applicantName}</span>
+                      <span className={`status-tag ${statusClass}`}>
+                        {report.reviewerAction ? "Reviewed" : "Pending evaluation"}
+                      </span>
+                      <span className="applicant-tile__date">
+                        {new Date(report.generatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                    </div>
+
+                    <span className="applicant-tile__cta">View profile →</span>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </div>
