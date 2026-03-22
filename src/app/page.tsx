@@ -16,7 +16,6 @@ const MOCKUP_CATEGORIES = [
 export default async function HomePage() {
   const session = await auth();
   const isLoggedIn = !!session;
-  const sampleReportId = listReports()[0]?.id ?? "";
 
   return (
     <>
@@ -32,7 +31,7 @@ export default async function HomePage() {
               <Link href="/applicant">For applicants</Link>
             )}
             {(!isLoggedIn || (session?.user as any)?.role === "reviewer") && (
-              <Link href={`/profile/${sampleReportId}`}>Demo profile</Link>
+              <Link href="/review">Reviewer Portal</Link>
             )}
           </nav>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -68,20 +67,18 @@ export default async function HomePage() {
 
             {/* Left: copy */}
             <div className="landing-hero-left">
-              <h1>Proof beyond<br />the credit score.</h1>
+              <h1>Comprehensive Reliability Profiling.</h1>
 
               <p className="lede">
-                Credora turns consented financial and housing evidence into a
-                clear, explainable profile. Landlords get fair signal.
-                Applicants show their real picture.
+                Credora securely transforms consented financial and housing data into an actionable reliability profile. We empower property managers with transparent insights and applicants with a holistic financial identity.
               </p>
 
               <div className="button-row">
                 <Link className="button button--primary" href="/applicant">
                   Build your profile
                 </Link>
-                <Link className="button button--secondary" href={`/profile/${sampleReportId}`}>
-                  See demo profile
+                <Link className="button button--secondary" href="/review">
+                  Reviewer Portal
                 </Link>
               </div>
             </div>
@@ -273,13 +270,13 @@ export default async function HomePage() {
         {/* CTA */}
         <div className="cta-section">
           <h2>Ready to build your profile?</h2>
-          <p>Under five minutes. A human reviews every application. No automated decisions.</p>
+          <p>Complete your profile efficiently. Our specialists review every application to ensure precision and fairness—without automated denials.</p>
           <div className="button-row">
             <Link className="button button--white" href="/applicant">
               Build applicant profile
             </Link>
-            <Link className="button button--white-outline" href={`/profile/${sampleReportId}`}>
-              Preview demo profile
+            <Link className="button button--white-outline" href="/review">
+              Access Reviewer Portal
             </Link>
           </div>
         </div>

@@ -66,7 +66,7 @@ const blankConsentMap: ConsentMap = {
   report_share: false,
 };
 
-export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string }) {
+export function ApplicantBuilder() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [form, setForm] = useState<FormState>(blankForm);
@@ -136,7 +136,7 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
           </Link>
           <nav className="site-nav">
             <Link href="/">← Home</Link>
-            <Link href={`/review/${sampleReportId}`}>Reviewer demo</Link>
+            <Link href="/review">Reviewer Portal</Link>
           </nav>
           <button
             className="button button--primary"
@@ -153,13 +153,13 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
       <div style={{ borderBottom: "1px solid var(--border)", width: "100%" }}>
         <div className="page-shell" style={{ padding: "2rem 0 1.75rem" }}>
           <span className="eyebrow" style={{ display: "block", marginBottom: "0.4rem" }}>
-            Applicant workspace
+            Applicant Portal
           </span>
           <h1 style={{ fontSize: "clamp(2rem, 4.5vw, 4rem)", maxWidth: "none", marginBottom: "0.5rem", lineHeight: 1.05 }}>
-            Build your housing trust profile
+            Establish Your Reliability Profile
           </h1>
           <p className="body-muted">
-            Enter your details and financial signals. Credora scores what you provide.
+            Securely provide your financial and residential history to generate a comprehensive, verifiable profile.
           </p>
         </div>
       </div>
@@ -172,7 +172,7 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
             <article className="card stack-md">
               <div className="stack-xs">
                 <span className="eyebrow eyebrow--subtle">Step 1</span>
-                <h2>Personal details</h2>
+                <h2>Applicant Information</h2>
               </div>
               <div className="form-grid">
                 <label className="field">
@@ -210,9 +210,9 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
             <article className="card stack-md">
               <div className="stack-xs">
                 <span className="eyebrow eyebrow--subtle">Step 2</span>
-                <h2>Financial signals</h2>
+                <h2>Financial Metrics</h2>
                 <p className="body-muted" style={{ marginTop: "0.25rem" }}>
-                  Credora uses these to calculate your reliability score.
+                  These verified metrics formulate the core of your reliability assessment.
                 </p>
               </div>
               <div className="form-grid">
@@ -268,7 +268,7 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
             <article className="card stack-md">
               <div className="stack-xs">
                 <span className="eyebrow eyebrow--subtle">Step 3</span>
-                <h2>Payment history</h2>
+                <h2>Residence & Payment History</h2>
               </div>
               <div className="form-grid">
                 <label className="field">
@@ -322,9 +322,9 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
             <article className="card stack-md">
               <div className="stack-xs">
                 <span className="eyebrow eyebrow--subtle">Step 4</span>
-                <h2>Documents and verification</h2>
+                <h2>Documentation & Verification</h2>
                 <p className="body-muted" style={{ marginTop: "0.25rem" }}>
-                  Upload supporting files. Reviewers see file names only, not the contents.
+                  Securely upload supporting documentation. Reviewers will only view the document classification and verification status, never the raw files.
                 </p>
               </div>
               <div className="form-grid">
@@ -423,9 +423,9 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
             <article className="card stack-md">
               <div className="stack-xs">
                 <span className="eyebrow eyebrow--subtle">Step 5</span>
-                <h2>Grant consent</h2>
+                <h2>Data Usage Consent</h2>
                 <p className="body-muted" style={{ marginTop: "0.25rem" }}>
-                  Control what Credora can use and share.
+                  Manage your data permissions and sharing preferences.
                 </p>
               </div>
               <div className="consent-grid">
@@ -505,10 +505,10 @@ export function ApplicantBuilder({ sampleReportId }: { sampleReportId: string })
             >
               <div>
                 <p style={{ fontWeight: 600, color: "var(--text)", marginBottom: "0.2rem" }}>
-                  Ready to generate?
+                  Finalize Assessment
                 </p>
                 <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                  Sharing consent must be enabled to create a reviewer link.
+                  Ensure data sharing consent is authorized prior to generating your profile link.
                 </p>
                 {error && (
                   <p style={{ fontSize: "0.85rem", color: "var(--caution)", marginTop: "0.4rem" }}>
