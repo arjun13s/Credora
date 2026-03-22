@@ -94,7 +94,11 @@ export function ProfileClient({
             <span>Credora</span>
           </Link>
           <nav className="site-nav">
-            <Link href="/applicant">New profile</Link>
+            {defaultTab === "reviewer" ? (
+              <Link href="/review">← All applicants</Link>
+            ) : (
+              <Link href="/applicant">New profile</Link>
+            )}
           </nav>
           <BandPill tone={shareActive ? "Verified" : "Missing"}>
             {shareActive ? "Access live" : "Revoked"}

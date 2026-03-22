@@ -136,7 +136,6 @@ export function ApplicantBuilder() {
           </Link>
           <nav className="site-nav">
             <Link href="/">← Home</Link>
-            <Link href="/review">Reviewer Portal</Link>
           </nav>
           <button
             className="button button--primary"
