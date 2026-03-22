@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { auth, signOut } from "@/auth";
+import { auth0 } from "@/auth";
 
 import { Logo } from "@/components/logo";
-import { listReports } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +13,7 @@ const MOCKUP_CATEGORIES = [
 ];
 
 export default async function HomePage() {
-  const session = await auth();
+  const session = await auth0.getSession();
   const isLoggedIn = !!session;
 
   return (
@@ -27,33 +26,26 @@ export default async function HomePage() {
             <span>Credora</span>
           </Link>
           <nav className="site-nav">
-            {(!isLoggedIn || (session?.user as any)?.role === "applicant") && (
+            {(!isLoggedIn || ((session?.user?.["https://credora.app/roles"] as string[]) ?? []).includes("applicant")) && (
               <Link href="/applicant">For applicants</Link>
             )}
-            {(!isLoggedIn || (session?.user as any)?.role === "reviewer") && (
+            {(!isLoggedIn || ((session?.user?.["https://credora.app/roles"] as string[]) ?? []).includes("reviewer")) && (
               <Link href="/review">Reviewer Portal</Link>
             )}
           </nav>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             {isLoggedIn ? (
-              <form
-                action={async () => {
-                  "use server";
-                  await signOut({ redirectTo: "/" });
-                }}
-              >
-                <button type="submit" className="button button--ghost" style={{ height: "36px", padding: "0 1rem" }}>
-                  Sign out ({session.user?.name})
-                </button>
-              </form>
+              <a className="button button--ghost" href="/auth/logout" style={{ height: "36px", padding: "0 1rem" }}>
+                Sign out ({session.user?.name ?? session.user?.email})
+              </a>
             ) : (
               <>
-                <Link className="button button--ghost" href="/login" style={{ height: "36px", padding: "0 1rem" }}>
+                <a className="button button--ghost" href="/auth/login" style={{ height: "36px", padding: "0 1rem" }}>
                   Sign in
-                </Link>
-                <Link className="button button--primary" href="/applicant" style={{ height: "36px", padding: "0 1rem" }}>
+                </a>
+                <a className="button button--primary" href="/auth/login" style={{ height: "36px", padding: "0 1rem" }}>
                   Get started
-                </Link>
+                </a>
               </>
             )}
           </div>

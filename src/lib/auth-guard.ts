@@ -1,8 +1,9 @@
-import { auth } from "@/auth";
-import type { UserRole } from "@/lib/users";
+import { auth0 } from "@/auth";
+
+export type UserRole = "applicant" | "reviewer";
 
 export async function requireAuth() {
-  const session = await auth();
+  const session = await auth0.getSession();
   if (!session?.user) {
     return null;
   }
@@ -10,14 +11,18 @@ export async function requireAuth() {
 }
 
 export async function requireRole(requiredRole: UserRole) {
-  const session = await auth();
+  const session = await auth0.getSession();
   if (!session?.user) {
     return {
       session: null,
       error: Response.json({ error: "Unauthorized" }, { status: 401 }),
     };
   }
-  if ((session.user as any).role !== requiredRole) {
+
+  const roles: string[] =
+    (session.user?.["https://credora.app/roles"] as string[]) ?? [];
+
+  if (!roles.includes(requiredRole)) {
     return {
       session,
       error: Response.json({ error: "Forbidden" }, { status: 403 }),

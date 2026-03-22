@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { auth, signOut } from "@/auth";
+import { auth0 } from "@/auth";
 
 import { listReports } from "@/lib/db";
 import { Logo } from "@/components/logo";
@@ -7,7 +7,7 @@ import { Logo } from "@/components/logo";
 export const dynamic = "force-dynamic";
 
 export default async function ReviewerDashboardPage() {
-  const session = await auth();
+  const session = await auth0.getSession();
   const isLoggedIn = !!session;
 
   const reports = listReports();
@@ -25,20 +25,13 @@ export default async function ReviewerDashboardPage() {
           </nav>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             {isLoggedIn ? (
-              <form
-                action={async () => {
-                  "use server";
-                  await signOut({ redirectTo: "/" });
-                }}
-              >
-                <button type="submit" className="button button--ghost" style={{ height: "36px", padding: "0 1rem" }}>
-                  Sign out ({session.user?.name})
-                </button>
-              </form>
+              <a className="button button--ghost" href="/auth/logout" style={{ height: "36px", padding: "0 1rem" }}>
+                Sign out ({session.user?.name ?? session.user?.email})
+              </a>
             ) : (
-              <Link className="button button--primary" href="/login" style={{ height: "36px", padding: "0 1rem" }}>
+              <a className="button button--primary" href="/auth/login" style={{ height: "36px", padding: "0 1rem" }}>
                 Sign in
-              </Link>
+              </a>
             )}
           </div>
         </div>
